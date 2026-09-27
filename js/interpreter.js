@@ -15,7 +15,11 @@
   /* ============================ TOKENIZER ============================ */
   const KEYWORDS = new Set(['const','let','var','function','return','if','else','for','while',
     'do','break','continue','switch','case','default','try','catch','finally','throw','new',
-    'typeof','instanceof','in','of','null','undefined','true','false','this','delete','void','async','await']);
+    'typeof','instanceof','in','of','null','undefined','true','false','this','delete','void','async','await',
+    'class','super']);
+  /* คำเหล่านี้เป็น keyword เฉพาะในบริบทของ class
+     ถ้าใส่ใน KEYWORDS จะทำให้ const get = 1 พัง จึงต้องเช็คเป็นชื่อธรรมดาแทน
+     extends / static / get / set */
 
   const PUNCT = ['>>>=','...','===','!==','**=','<<=','>>=','>>>','&&=','||=','??=','=>','==','!=','<=','>=',
     '&&','||','??','?.','++','--','+=','-=','*=','/=','%=','&=','|=','^=','**','<<','>>',
@@ -117,6 +121,15 @@
         continue;
       }
 
+      /* private field #x — ยังไม่บังคับให้ซ่อนจริง แต่ต้องอ่านเป็นชื่อเดียว
+         ไม่งั้น # จะกลายเป็น syntax error แล้วนักเรียนจะงง */
+      if (c === '#' && /[A-Za-z_$]/.test(src[i + 1] || '')){
+        const s = i; adv(1);
+        while (i < n && /[A-Za-z0-9_$]/.test(src[i])) adv(1);
+        push('name', src.slice(s, i));
+        continue;
+      }
+
       /* punctuation */
       let matched = null;
       for (const p of PUNCT) if (src.startsWith(p, i)){ matched = p; break; }
@@ -158,7 +171,16 @@
     /* ---- program ---- */
     function parseProgram() {
       const body = [];
-      while (!atT('eof')) body.push(parseStatement());
+      while (!atT('eof')){
+        const before = p;
+        body.push(parseStatement());
+        /* กันการตัดโค้ดทิ้งเงียบ ๆ: ถ้า statement ไม่กิน token เลย ให้เป็น error
+           เดิมโค้ดที่ผิดจะถูกตัดส่วนหลังทิ้งแล้วรันได้ครึ่งเดียว ซึ่งทำให้เดาไม่ได้ว่าผิดตรงไหน */
+        if (p === before){
+          const bad = peek();
+          throw SyntaxErr("Unexpected token '" + (bad.value ?? 'end of input') + "'", bad.line, bad.col);
+        }
+      }
       return node('Program', 1, { body });
     }
 
@@ -188,6 +210,12 @@
             const id = parseBindingTarget();
             const fn = parseFunctionRest(false);
             return node('FunctionDecl', ln, { id, params: fn.params, body: fn.body });
+          }
+          case 'class': {
+            next();
+            const cls = parseClassRest();
+            if (!cls.name) throw SyntaxErr('class declaration needs a name', ln, t.col);
+            return node('ClassDecl', ln, cls);
           }
           case 'return': {
             next();
@@ -428,6 +456,89 @@
       return { params, body: parseBlock() };
     }
 
+    /* ชื่อเมธอด/ชื่อ property ยอมรับ keyword ด้วย
+       เช่น class M { static of() {} } หรือ { if() {} } ถูกต้องใน JS */
+    function isMemberNameTok(t) {
+      return t.type === 'name' || t.type === 'kw' || t.type === 'str' || t.type === 'num';
+    }
+
+    /* ---- class ----
+       รองรับ: constructor, method ธรรมดา, static, get/set, field (x = 1), extends
+       ข้อจำกัด: #private ยังอ่านเป็นชื่อธรรมดา (ไม่ได้ซ่อนจริง)
+                 static block และชื่อเมธอดแบบคำนวณ ([expr]) ยังไม่รองรับ */
+    function parseClassRest() {
+      const ln = peek().line;
+      let name = null;
+      if (isMemberNameTok(peek())) name = next().value;
+
+      /* extends เป็นคำเฉพาะบริบท ต้องเช็คจากชื่อ ไม่ใช่จาก keyword */
+      let superClass = null;
+      if (peek().type === 'name' && peek().value === 'extends'){
+        next();
+        superClass = parsePostfix();
+      }
+
+      expect('{');
+      const members = [];
+      while (!at('}')){
+        if (eat(';')) continue;          // field ที่ไม่มีค่าเริ่มต้น: x;
+        const before = p;
+        const m = parseClassMember();
+        if (m) members.push(m);
+        /* กันวนไม่สิ้นสุด: ถ้าไม่ได้กิน token เลย แปลว่าเขียนผิด
+           ต้องเป็น SyntaxError ไม่ใช่ค้าง */
+        if (p === before){
+          const bad = peek();
+          throw SyntaxErr('Unexpected token ' + JSON.stringify(bad.value) + ' in class body', bad.line, bad.col);
+        }
+      }
+      expect('}');
+      return { name, superClass, members, line: ln };
+    }
+
+    function parseClassMember(){
+      const ln = peek().line;
+      let isStatic = false;
+      let kind = 'method';
+      let name = null;
+
+      if (peek().type === 'name' && peek().value === 'static'){
+        /* "static" ที่ตามด้วย ( คือชื่อเมธอดชื่อ static ไม่ใช่คำสั่ง static */
+        const nx = peek(1);
+        if (!(nx.type === 'punc' && nx.value === '(')){
+          next(); isStatic = true;
+        }
+      }
+      if (peek().type === 'name' && (peek().value === 'get' || peek().value === 'set')){
+        if (isMemberNameTok(peek(1))){
+          kind = next().value;           // 'get' หรือ 'set'
+        }
+      }
+
+      /* ชื่อเมธอด: ชื่อธรรมดา, keyword, สตริง หรือตัวเลข
+         ต้องรับ keyword ด้วย ไม่งั้น static of() {} จะเขียนไม่ได้ (of เป็น keyword ใน for-of) */
+      const kt = peek();
+      if (isMemberNameTok(kt)){
+        next();
+        name = String(kt.value);
+      } else {
+        return null;                      // ข้างหน้าไม่ใช่ชื่อเมธอด — ปล่อยให้ผู้เรียกตัดสิน
+      }
+
+      /* field: x = 1;  (ไม่มีวงเล็บ) */
+      if (kind === 'method' && !isStatic && !at('(')){
+        let init = null;
+        if (eat('=')) init = parseAssign();
+        eat(';');
+        return { kind: 'field', name, init, line: ln };
+      }
+
+      if (!at('(')) return null;
+      const params = parseParams();
+      const body = parseBlock();
+      return { kind, name, isStatic, params, body, line: ln };
+    }
+
     function parseConditional() {
       const test = parseBinary(0);
       if (at('?')){
@@ -563,6 +674,19 @@
           case 'null': next(); return node('Literal', t.line, { value: null });
           case 'undefined': next(); return node('Ident', t.line, { name: 'undefined' });
           case 'this': next(); return node('This', t.line);
+          case 'class': {
+            next();
+            const cls = parseClassRest();
+            return node('ClassExpr', t.line, cls);
+          }
+          case 'super': {
+            next();
+            if (at('(')){ const args = parseArguments(); return node('SuperCall', t.line, { args }); }
+            if (at('[')){ next(); const ix = parseExpression(); expect(']'); return node('SuperMember', t.line, { prop: ix, computed: true, optional: false }); }
+            if (at('.')) next();      /* กินจุดก่อน ไม่งั้นชื่อที่ได้จะเป็น "." */
+            const nm = next();
+            return node('SuperMember', t.line, { prop: { type: 'Literal', value: String(nm.value), line: nm.line }, computed: false, optional: false });
+          }
           case 'function': {
             next();
             let id = null;
@@ -590,17 +714,68 @@
         next();
         const props = [];
         while (!at('}')){
+          const mark = p;
           if (eat('...')){ props.push({ spread: true, arg: parseAssign() }); }
           else {
+            /* วิธีแบบย่อ: { get() {} } / { get x() {} } / { set x(v) {} }
+               static/get/set เป็นชื่อธรรมดา จึงต้องดูว่าตามด้วยอะไร
+               - ชื่อตามด้วย "("  = วิธีธรรมดา
+               - get/set ตามด้วยชื่อ แล้วชื่อนั้นตามด้วย "(" = accessor */
+            const nm0 = peek();
+            if (isMemberNameTok(nm0)){
+              const nx = peek(1);
+              const isMethod = (nx.type === 'punc' && nx.value === '(');
+              let kind = null;
+              if (!isMethod && nm0.type === 'name' && (nm0.value === 'get' || nm0.value === 'set')
+                  && isMemberNameTok(nx)){
+                const k2 = peek(2);
+                if (k2.type === 'punc' && k2.value === '(') kind = nm0.value;
+              }
+              if (isMethod || kind){
+                const ln0 = nm0.line;
+                if (kind){
+                  next();                       // กิน get / set
+                  const kt1 = next();            // กินชื่อ property
+                  props.push({
+                    key: { type: 'Literal', value: String(kt1.value), line: kt1.line },
+                    value: node('FunctionExpr', ln0, { name: null, params: parseParams(), body: parseBlock() }),
+                    computed: false, method: kind
+                  });
+                } else {
+                  const kt0 = next();            // กินชื่อเมธอด
+                  const ps = parseParams();
+                  props.push({
+                    key: { type: 'Literal', value: String(kt0.value), line: kt0.line },
+                    value: node('FunctionExpr', ln0, { name: String(kt0.value), params: ps, body: parseBlock() }),
+                    computed: false, method: 'method'
+                  });
+                }
+                if (!at('}')) expect(',');
+                continue;
+              }
+            }
             let key, computed = false;
             if (at('[')){ next(); key = parseAssign(); computed = true; expect(']'); }
             else if (peek().type === 'num' || peek().type === 'str'){ const kt = next(); key = { type: 'Literal', value: String(kt.value), line: kt.line }; }
             else if (at('[')) { /* unreachable */ }
             else { const kt = next(); key = { type: 'Literal', value: String(kt.value), line: kt.line }; }
             if (eat(':')) props.push({ key, value: parseAssign(), computed });
-            else props.push({ key, value: key, computed: false, shorthand: true });
+            else {
+              /* { v } ย่อ = { v: v } ต้องอ้างตัวแปร ไม่ใช่ค่าคงที่
+                 (เดิมใช้ value: key ซึ่งทำให้ { v } ได้ค่าสตริง "v") */
+              props.push({
+                key,
+                value: node('Ident', key.line, { name: String(key.value) }),
+                computed: false, shorthand: true
+              });
+            }
           }
           if (!at('}')) expect(',');
+          /* กันวนไม่สิ้นสุดถ้าไม่ได้กิน token เลย */
+          if (p === mark){
+            const bad = peek();
+            throw SyntaxErr('Unexpected token ' + JSON.stringify(bad.value) + ' in object literal', bad.line, bad.col);
+          }
         }
         expect('}');
         return node('ObjectLit', t.line, { props });
@@ -668,7 +843,33 @@
             throw RuntimeError('ReferenceError', node.name + ' is not defined', node.line);
           return v;
         }
-        case 'This': return undefined;
+        case 'This': return lookupThis(env);
+        case 'ClassExpr': return yield* buildClass(node, env);
+        case 'SuperCall': {
+          const s = lookupThis(env);
+          const me = lookupThisClass(env);
+          if (!me || !me.parent){
+            throw RuntimeError('SyntaxError', "'super' keyword unexpected here", node.line);
+          }
+          const args = yield* evalArgs(node.args, env);
+          /* super(...) ต้องรันบน this เดิม ไม่ใช่ object ใหม่
+             และต้องข้าม field ของคลาสแม่ไป เพราะ field ถูกกำหนดที่ new แล้ว */
+          yield* callFunction(me.parent, args, node.line, s, { skipFields: true });
+          return undefined;
+        }
+        case 'SuperMember': {
+          const s = lookupThis(env);
+          const me = lookupThisClass(env);
+          if (!me || !me.parent){
+            throw RuntimeError('SyntaxError', "'super' keyword unexpected here", node.line);
+          }
+          const k = node.computed ? String(yield* evalExpr(node.prop, env)) : String(node.prop.value);
+          /* เริ่มที่ prototype ของคลาสแม่ ไม่ใช่ของคลาสตัวเอง */
+          const home = me.parent.prototype;
+          const acc = findAccessor(home, k, 'get');
+          if (acc) return yield* callFunction(acc.fn, [], node.line, s);
+          return home[k];
+        }
         case 'Template': {
           let s = node.quasis[0];
           for (let i = 0; i < node.exprs.length; i++){
@@ -695,6 +896,7 @@
         }
         case 'ObjectLit': {
           const o = {};
+          const accs = new Map();
           for (const pr of node.props){
             if (pr.spread){
               const v = yield* evalExpr(pr.arg, env);
@@ -702,7 +904,25 @@
               continue;
             }
             const k = pr.computed ? String(yield* evalExpr(pr.key, env)) : pr.key.value;
+            /* วิธีใน object literal: { get() {} } / { get x() {} } / { set x(v) {} }
+               วิธีธรรมดาแปลงเป็นฟังก์ชันที่ this ผูกกับ object เมื่อเรียกผ่าน o.m() */
+            if (pr.method){
+              const fn = makeFunction(pr.value, env, ctx);
+              if (pr.method === 'method'){
+                o[k] = fn;
+              } else {
+                const a = accs.get(k) || {};
+                a[pr.method] = fn;
+                accs.set(k, a);
+              }
+              continue;
+            }
             o[k] = yield* evalExpr(pr.value, env);
+          }
+          if (accs.size){
+            /* เก็บ accessor ของ object literal ไว้ใน WeakMap
+               เพื่อให้ findAccessor มองเห็น โดยไม่ต้องผูกใน prototype ของใคร */
+            ACC_FOR.set(o, accs);
           }
           return o;
         }
@@ -719,7 +939,7 @@
             case '-': return -v;
             case '+': return +v;
             case '~': return ~v;
-            case 'typeof': return typeof v;
+            case 'typeof': return typeof v === 'object' && v instanceof InterpFn ? 'function' : typeof v;
             case 'void': return undefined;
             case 'delete': return true;
           }
@@ -775,28 +995,53 @@
           if (o === null || o === undefined) throw RuntimeError('TypeError', "Cannot read properties of " + String(o) + " (reading '" + propName(node.prop) + "')", node.line);
           const k = node.prop.type === 'Literal' ? node.prop.value : String(yield* evalExpr(node.prop, env));
           if (o instanceof InterpFn) return o.getMember(k, env);
+          /* getter ของ class ต้องรันโค้ดก่อน ค่าปกติค่อยอ่านตามปกติ */
+          if (o !== null && typeof o === 'object' && !Array.isArray(o)){
+            const acc = findAccessor(o, k, 'get');
+            if (acc) return yield* callFunction(acc.fn, [], node.line, o);
+          }
           return readMember(o, k, node.line);
         }
         case 'Call': {
-          let callee = node.callee;
+          const callee = node.callee;
           let thisVal;
-          if (callee.type === 'Member'){
+          let fn = null;
+          let alreadyResolved = false;
+          if (callee.type === 'SuperMember'){
+            /* super.x() ต้องผูก this กับ object ปัจจุบันเหมือนกัน */
+            thisVal = lookupThis(env);
+            fn = yield* evalExpr(callee, env);
+            alreadyResolved = true;
+          }
+          if (!alreadyResolved && callee.type === 'Member'){
             const o = yield* evalExpr(callee.obj, env);
             if ((o === null || o === undefined) && callee.optional) return undefined;
             if (o === null || o === undefined) throw RuntimeError('TypeError', "Cannot read properties of " + String(o), node.line);
             thisVal = o;
-            callee = { type: 'Member', obj: callee.obj, prop: callee.prop, line: callee.line, optional: false };
+            /* ต้องหาฟังก์ชันตรงนี้เลย ถ้าเอาไป evalExpr(callee) ทีหลัง
+               ตัวรับจะถูกประเมินซ้ำ เช่น o.add(2).total() จะเพิ่มค่า n สองรอบ */
+            const k = callee.prop.type === 'Literal' ? callee.prop.value : String(yield* evalExpr(callee.prop, env));
+            if (o instanceof InterpFn) fn = o.getMember(k, env);
+            else {
+              let acc = null;
+              if (o !== null && typeof o === 'object' && !Array.isArray(o)) acc = findAccessor(o, k, 'get');
+              if (acc) fn = yield* callFunction(acc.fn, [], node.line, o);
+              else fn = readMember(o, k, node.line);
+            }
+            alreadyResolved = true;
           }
           const args = yield* evalArgs(node.args, env);
-          if (callee.type === 'Arrow' || callee.type === 'FunctionExpr' || callee.type === 'FunctionDecl'){
-            return yield* callFunction(makeFunction(callee, env, ctx), args, node.line);
+          if (!alreadyResolved){
+            if (callee.type === 'Arrow' || callee.type === 'FunctionExpr' || callee.type === 'FunctionDecl'){
+              return yield* callFunction(makeFunction(callee, env, ctx), args, node.line);
+            }
+            fn = yield* evalExpr(callee, env);
           }
-          const f = yield* evalExpr(callee, env);
-          if (f instanceof InterpFn){
-            if (node.optional && (f === undefined || f === null)) return undefined;
-            return yield* callFunction(f, args, node.line, thisVal);
+          if (fn instanceof InterpFn){
+            if (node.optional && (fn === undefined || fn === null)) return undefined;
+            return yield* callFunction(fn, args, node.line, thisVal);
           }
-          return yield* callNative(f, thisVal, args, node.line);
+          return yield* callNative(fn, thisVal, args, node.line);
         }
         case 'Await': return yield* evalExpr(node.arg, env);
         case 'Spread': throw RuntimeError('SyntaxError', 'Unexpected spread', node.line);
@@ -847,7 +1092,24 @@
       if (node.op === 'instanceof'){
         const C = yield* evalExpr(node.right, env);
         const v = yield* evalExpr(node.left, env);
-        return v instanceof InterpFn ? v.ctor : false;
+        /* ฟังก์ชันที่นักเรียนเขียน: เดินไล่ prototype chain จนเจอ C.prototype
+           ครอบคลุมทั้ง new F(), class, และ Object.create(F.prototype) */
+        if (C instanceof InterpFn){
+          if (v === null || v === undefined || (typeof v !== 'object' && typeof v !== 'function')) return false;
+          const target = C.prototype;
+          let p = Object.getPrototypeOf(v);
+          while (p){
+            if (p === target) return true;
+            p = Object.getPrototypeOf(p);
+          }
+          return false;
+        }
+        if (typeof C === 'function'){
+          if (v === null || v === undefined) return false;
+          try { return v instanceof C; } catch (e) { return false; }
+        }
+        if (C === null || C === undefined) throw RuntimeError('TypeError', "Right-hand side of 'instanceof' is not callable", node.line);
+        return false;
       }
       const l = yield* evalExpr(node.left, env);
       const r = yield* evalExpr(node.right, env);
@@ -906,6 +1168,11 @@
         }
         if (o instanceof Map){ o.set(String(k), value); return; }
         if (o instanceof Set){ return; }
+        /* setter ของ class ต้องรันโค้ดก่อน */
+        if (o !== null && typeof o === 'object'){
+          const acc = findAccessor(o, k, 'set');
+          if (acc){ yield* callFunction(acc.fn, [value], target.line, o); return; }
+        }
         o[k] = value;
         return;
       }
@@ -948,6 +1215,12 @@
         case 'FunctionDecl': {
           yield* tick(node, env);
           declare(env, node.id.name, makeFunction(node, env, ctx));
+          return null;
+        }
+        case 'ClassDecl': {
+          yield* tick(node, env);
+          const cls = yield* buildClass(node, env);
+          declare(env, node.name, cls);
           return null;
         }
         case 'Return': {
@@ -1155,31 +1428,185 @@
       throw RuntimeError('TypeError', String(v) + ' is not iterable', line);
     }
 
+    /* คลาสที่กำลังทำงานอยู่ ต้องจำไว้ใน scope ของ constructor/method
+       เพราะ super ต้องเรียก "คลาสแม่" ไม่ใช่คลาสที่ instance เป็นสมาชิก
+       (ถ้าเดาจาก proto.constructor จะได้ตัวเอง แล้วเกิด recursion) */
+    const THIS_CLASS = 'thisClass';
+    function lookupThisClass(env) {
+      let s = env;
+      while (s) {
+        if (hasOwn(s, THIS_CLASS)) return s[THIS_CLASS];
+        s = Object.getPrototypeOf(s);
+      }
+      return null;
+    }
+
     /* ---------- functions ---------- */
     class InterpFn {
       constructor(node, defEnv, c, thisVal) {
         this.node = node; this.env = defEnv; this.ctx = c; this.ctor = false;
         this.name = node.id ? node.id.name : (node.name || (node.params ? '' : ''));
         this.thisVal = thisVal;
+        /* ของ class: proto, members, parent, fields, ctor */
+        this.isClass = false;
+        this.proto = null;
+        this.members = [];
+        this.fields = [];
+        this.ctor = null;
+        this.parent = null;
+        this.classEnv = null;
+        this.sfields = [];
+        this.ownerClass = null;    /* เมธอดของ class: จำคลาสเจ้าของไว้ให้ super */
       }
+      /* prototype ของฟังก์ชันธรรมดาต้องเป็น object จริง เพื่อให้เอาไปใช้เป็น
+         prototype ของ new ได้ (Object.create ต้องการ object) */
+      get prototype(){
+        if (this.proto === null) this.proto = {};
+        return this.proto;
+      }
+      set prototype(v){ this.proto = v; }
       getMember(k, env) {
         if (k === 'name') return this.name;
         if (k === 'length') return this.node.params ? this.node.params.length : 0;
-        return undefined;
+        if (k === 'prototype') return this.prototype;
+        /* เมธอดของ class ที่ยังไม่ได้ผูกลง prototype (เช่นผ่าน super) */
+        const st = k === 'prototype' ? null : CLASS_STATICS.get(this);
+        if (st && Object.prototype.hasOwnProperty.call(st, k)) return st[k];
+        return this.prototype === null ? undefined : this.prototype[k];
       }
-      setMember() {}
+      setMember(k, v) {
+        if (k === 'prototype'){ this.proto = v; return; }
+        if (k === 'name'){ this.name = v; return; }
+        this.prototype[k] = v;
+      }
+    }
+
+    /* ของที่ควรไม่โผล่ตอนพิมพ์หรือแปลงเป็น JSON: prototype, class internals */
+    const NON_ENUM = new Set(['prototype']);
+
+    /* getter/setter ของ class เก็บแยกจากค่าปกติ
+       เพราะต้องรันโค้ดภายในเวลาอ่าน/เขียน ซึ่งทำไม่ได้ถ้าใช้ object ธรรมดา */
+    const CLASS_ACC = new WeakMap();   // proto object -> Map(name -> { get, set })
+    const CLASS_STATICS = new WeakMap(); // ctor -> { name: value }
+    /* accessor ของ object literal ติดกับตัว object เอง ไม่ใช่ prototype */
+    const ACC_FOR = new WeakMap();    // object -> Map(name -> { get, set })
+
+    /* ไล่ขึ้นไปหา accessor ของ class ที่ object นี้เป็นสมาชิก
+       ต้องดูตัว object เองด้วย เพราะ accessor ของ object literal ไม่ได้อยู่บน prototype */
+    function findAccessor(o, name, want){
+      if (o === null || o === undefined) return null;
+      const own = ACC_FOR.get(o);
+      if (own && own.has(name)){
+        const a = own.get(name);
+        if (a[want]) return { fn: a[want], home: o };
+        return null;
+      }
+      let p = Object.getPrototypeOf(o);
+      while (p){
+        const m = CLASS_ACC.get(p);
+        if (m && m.has(name)){
+          const a = m.get(name);
+          if (a[want]) return { fn: a[want], home: p };
+          return null;
+        }
+        const m2 = ACC_FOR.get(p);
+        if (m2 && m2.has(name)){
+          const a = m2.get(name);
+          if (a[want]) return { fn: a[want], home: p };
+          return null;
+        }
+        p = Object.getPrototypeOf(p);
+      }
+      return null;
+    }
+
+    /* เหมือน findAccessor แต่เริ่มจาก prototype ที่ระบุตรง ๆ (ใช้กับ super) */
+    function findAccessorOn(proto, name, want){
+      let p = proto;
+      while (p){
+        const m = CLASS_ACC.get(p);
+        if (m && m.has(name)){
+          const a = m.get(name);
+          return a[want] ? { fn: a[want], home: p } : null;
+        }
+        p = Object.getPrototypeOf(p);
+      }
+      return null;
     }
 
     function makeFunction(node, defEnv, c) {
       return new InterpFn(node, defEnv, c);
     }
 
-    function* callFunction(fn, args, line, thisVal) {
+    /* หา this ที่ใกล้ที่สุด โดยไล่ขึ้นไปตาม scope chain */
+    function lookupThis(env){
+      let s = env;
+      while (s){
+        if (hasOwn(s, 'thisVal')) return s.thisVal;
+        s = Object.getPrototypeOf(s);
+      }
+      return undefined;
+    }
+
+    /* ---------- class ---------- */
+    function* buildClass(node, env) {
+      const parent = node.superClass ? yield* evalExpr(node.superClass, env) : null;
+      if (node.superClass && !(parent instanceof InterpFn)){
+        throw RuntimeError('TypeError', 'Class extends value is not a constructor', node.line);
+      }
+      const ctorNode = node.members.find(m => m.kind === 'method' && m.name === 'constructor' && !m.isStatic);
+      const ctorFn = new InterpFn(
+        { type: 'FunctionDecl', id: { name: node.name }, params: ctorNode ? ctorNode.params : [], body: ctorNode ? ctorNode.body : { type: 'Block', body: [] } },
+        env, ctx);
+      ctorFn.isClass = true;
+      ctorFn.name = node.name || '';
+      ctorFn.node.className = node.name || '';
+      ctorFn.parent = parent;
+      ctorFn.classEnv = env;
+
+      /* prototype ต้องสืบทอดจากของคลาสแม่ ไม่งั้นเมธอดของแม่จะหาย */
+      ctorFn.proto = parent ? Object.create(parent.prototype) : {};
+      ctorFn.proto.constructor = ctorFn;
+
+      const accessors = new Map();
+      const statics = {};
+      for (const m of node.members){
+        if (m.name === 'constructor' && m.kind === 'method' && !m.isStatic) continue;
+        if (m.kind === 'field'){
+          ctorFn.fields.push({ name: m.name, init: m.init });
+          continue;
+        }
+        if (m.kind === 'field' && m.isStatic){ continue; }
+        const fn = new InterpFn({ type: 'FunctionDecl', id: { name: m.name }, params: m.params, body: m.body }, env, ctx);
+        fn.name = m.name;
+        fn.ownerClass = ctorFn;      /* ให้ super รู้ว่ากำลังอยู่ในคลาสไหน */
+        if (m.isStatic){
+          statics[m.name] = fn;
+          ctorFn.sfields.push({ name: m.name, fn });
+        } else if (m.kind === 'get' || m.kind === 'set'){
+          const a = accessors.get(m.name) || {};
+          a[m.kind] = fn;
+          accessors.set(m.name, a);
+        } else {
+          ctorFn.proto[m.name] = fn;
+        }
+      }
+      if (accessors.size) CLASS_ACC.set(ctorFn.proto, accessors);
+      if (Object.keys(statics).length) CLASS_STATICS.set(ctorFn, statics);
+      return ctorFn;
+    }
+
+    function* callFunction(fn, args, line, thisVal, opts) {
       const node = fn.node;
       if (node.type !== 'Arrow' && node.type !== 'FunctionExpr' && node.type !== 'FunctionDecl') return fn;
       if (ctx.stack.length > MAX_DEPTH) throw RuntimeError('RangeError', 'Maximum call stack size exceeded', line);
       const fEnv = newScope(fn.env);
-      fEnv.thisVal = thisVal;
+      /* arrow function ไม่มี this ของตัวเอง แต่จะได้ this ของฟังก์ชันที่มันอยู่ข้างใน
+         ถ้าตั้ง thisVal ให้ arrow เมื่อไร this ข้างในจะกลายเป็น undefined เสมอ */
+      if (node.type !== 'Arrow') fEnv.thisVal = thisVal;
+      /* จำคลาสไว้ให้ super หา และจำเมธอดที่ถูกเรียกจากคลาสไหน */
+      if (fn.isClass) fEnv[THIS_CLASS] = fn;
+      else if (fn.ownerClass) fEnv[THIS_CLASS] = fn.ownerClass;
       if (node.params){
         for (let i = 0; i < node.params.length; i++){
           const p = node.params[i];
@@ -1247,9 +1674,27 @@
       if (C === String) return args.map(a => toStr(a)).join('');
       if (C === Number) return toNum(args[0]);
       if (C instanceof InterpFn){
-        const obj = { __fn: C };
+        /* arrow function ไม่มี this จึงเอามา new ไม่ได้ (ตามมาตรฐาน) */
+        if (C.node.type === 'Arrow'){
+          throw RuntimeError('TypeError', str1(C) + ' is not a constructor', line);
+        }
+        /* new F() ต้องผูก this กับ object ใหม่ที่สืบทอด F.prototype
+           (เดิมใช้ { __fn: C } ซึ่ง this เป็น undefined เพราะ this ไม่เคยถูกอ่าน) */
+        const obj = Object.create(C.prototype);
+        if (C.isClass){
+          /* field ของคลาสแม่ต้องมาก่อนของคลาสลูก (new เรียกจากบนลงล่างตามลำดับชั้น) */
+          const chain = [];
+          for (let p = C; p; p = p.parent) chain.unshift(p);
+          for (const p of chain){
+            for (const f of p.fields){
+              obj[f.name] = f.init ? yield* evalExpr(f.init, p.classEnv) : undefined;
+            }
+          }
+        }
         const r = yield* callFunction(C, args, line, obj);
-        return r === undefined ? obj : r;
+        /* constructor คืนค่าเป็น object ต้องใช้ตัวนั้นแทน (เหมือน JS) */
+        if (r !== undefined && r !== null && typeof r === 'object') return r;
+        return obj;
       }
       throw RuntimeError('TypeError', 'ไม่สามารถสร้างค่าด้วย ' + str1(C), line);
     }
@@ -1559,7 +2004,14 @@
       entries: (o) => o == null ? [] : Object.entries(toPlain(o)),
       assign: (t, ...s) => Object.assign(t, ...s.map(toPlain)),
       freeze: (o) => o,
-      fromEntries: (e) => Object.fromEntries(e)
+      isFrozen: (o) => Object.isFrozen(o),
+      fromEntries: (e) => Object.fromEntries(e),
+      /* คืน object ที่สืบทอด proto — ใช้สร้าง "คลาส" แบบไม่ใช้ class keyword */
+      create: (proto) => (proto === null || proto === undefined ? {} : Object.create(proto)),
+      getPrototypeOf: (o) => Object.getPrototypeOf(o),
+      setPrototypeOf: (o, p) => Object.setPrototypeOf(o, p),
+      getOwnPropertyNames: (o) => Object.getOwnPropertyNames(o),
+      hasOwn: (o, k) => hasOwn(o, k)
     });
     GLOBAL.Map = Map; GLOBAL.Set = Set;
     GLOBAL.Error = Error;
@@ -1580,7 +2032,24 @@
       if (Array.isArray(v)) return v.map(toPlain);
       if (v instanceof Map) return Object.fromEntries(v);
       if (v instanceof Set) return [...v];
+      /* object ธรรมดา: ต้องลงไปให้ลึก ไม่งั้น JSON.stringify จะเห็น
+         ข้างในของฟังก์ชันที่เก็บไว้เป็น property (เช่น method ใน object literal)
+         แล้วพิมพ์สาระภายในของ interpreter ออกมาเพี้ยน */
+      if (v !== null && typeof v === 'object' && !isNativeThing(v)){
+        const out = {};
+        for (const k of Object.keys(v)){
+          const x = toPlain(v[k]);
+          if (x !== undefined) out[k] = x;
+        }
+        return out;
+      }
       return v;
+    }
+
+    /* ของที่มาจาก JS จริง (Error, RegExp ฯลฯ) ไม่ต้องลงไปแตก */
+    function isNativeThing(v) {
+      return v instanceof Error || v instanceof RegExp || v instanceof Date
+        || (typeof Promise !== 'undefined' && v instanceof Promise);
     }
 
     /* ================= runner ================= */

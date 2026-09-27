@@ -723,5 +723,78 @@ const PROBLEMS = {
       { input: { sentence: 'bbb a bb',             letter: 'b' }, output: 'bbb' },
       { input: { sentence: 'Ant bat apple',        letter: 'A' }, output: 'apple' }
     ]
+  },
+
+  /* ---------- 33. ปริมาณน้ำที่ขังอยู่ระหว่างเสา ---------- */
+  p33: {
+    id: 'p33',
+    inputName: 'skyline',
+    title: 'ปริมาณน้ำที่ขังอยู่ระหว่างเสา',
+    subtitle: 'Trapping Rain Water',
+    score: 30,
+    difficulty: 'hard',
+    desc: 'มีเสาสูง h[i] วางเรียงกันจากซ้ายไปขวา เมื่อฝนตก น้ำจะขังอยู่ในหลุมที่เกิดจากเสาที่สูงกว่าข้างเคียง ในช่องที่ i น้ำจะขังได้เท่าไร คือ ความสูงที่ต่ำที่สุดของ (เสาสูงสุดทางซ้าย, เสาสูงสุดทางขวา) เอาลบด้วยความสูงของเสาตรงช่องนั้น ต้องรวมน้ำทุกช่อง ถ้าช่องไหนไม่มีหลุมก็นับเป็น 0',
+    inputDesc: '{ heights: [ความสูงของเสาแต่ละต้น...], minPillars: จำนวนเสาขั้นต่ำ (ใช้ตรวจว่าข้อมูลถูกต้อง) }',
+    outputDesc: 'ปริมาณน้ำขังรวมทั้งหมด',
+    examples: [{ input: '{ "heights": [1,8,6,2,5,4,8,3,7], "minPillars": 2 }', output: '19' }],
+    testCases: [
+      { input: { heights: [1,8,6,2,5,4,8,3,7], minPillars: 2 }, output: 19 },
+      { input: { heights: [0,1,0,2,1,0,1,3,2,1,2,1], minPillars: 2 }, output: 6 },
+      { input: { heights: [4,2,0,3,2,5], minPillars: 2 }, output: 9 },
+      { input: { heights: [1,2,3], minPillars: 2 }, output: 0 },
+      { input: { heights: [3,2,1], minPillars: 2 }, output: 0 },
+      { input: { heights: [5], minPillars: 1 }, output: 0 },
+      { input: { heights: [2,0,2], minPillars: 2 }, output: 2 },
+      { input: { heights: [6,4,2,0], minPillars: 2 }, output: 0 }
+    ]
+  },
+
+  /* ---------- 34. ก้อนติดกันที่รวมได้ไม่เกินเงิน ---------- */
+  p34: {
+    id: 'p34',
+    inputName: 'purchase',
+    title: 'ก้อนติดกันที่รวมได้ไม่เกินเงิน',
+    subtitle: 'Max Subarray Sum',
+    score: 30,
+    difficulty: 'hard',
+    desc: 'มีตัวเลขเรียงกันเป็นแถว แต่ละตัวคือราคาของสินค้าหนึ่งชิ้นที่ต้องซื้อ "ติดกัน" คือซื้อเป็นกลุ่มต่อเนื่องกันเท่านั้น ข้ามสินค้าไม่ได้ ให้หากลุ่มติดกันที่ราคารวมมากที่สุดโดยที่ยังไม่เกินเงินที่มี ถ้าไม่มีกลุ่มใดที่รวมได้ไม่เกินเงินเลย ให้ตอบ 0 (คือไม่ซื้ออะไรเลย)',
+    inputDesc: '{ prices: [ราคาของสินค้าตามลำดับ...], budget: เงินที่มี }',
+    outputDesc: 'ราคารวมของกลุ่มที่ซื้อได้มากที่สุด (ไม่เกิน budget)',
+    examples: [{ input: '{ "prices": [2,4,3,5,1], "budget": 10 }', output: '9' }],
+    testCases: [
+      { input: { prices: [2,4,3,5,1], budget: 10 }, output: 9 },
+      { input: { prices: [2,4,3,5,1], budget: 14 }, output: 14 },
+      { input: { prices: [2,4,3,5,1], budget: 15 }, output: 15 },
+      { input: { prices: [1,2,3],     budget: 0  }, output: 0 },
+      { input: { prices: [5,1,1],     budget: 100 }, output: 7 },
+      { input: { prices: [3,3,3],     budget: 8  }, output: 6 },
+      { input: { prices: [4,2],        budget: 3  }, output: 2 },
+      { input: { prices: [3,4],        budget: 5  }, output: 4 },
+      { input: { prices: [7],          budget: 6  }, output: 0 }
+    ]
+  },
+
+  /* ---------- 35. แตกสายแล้วกลับด้านครึ่งหลัง ---------- */
+  p35: {
+    id: 'p35',
+    inputName: 'order',
+    title: 'แตกสายแล้วกลับด้านครึ่งหลัง',
+    subtitle: 'Reverse The Second Half',
+    score: 30,
+    difficulty: 'hard',
+    desc: 'สร้างรายการโยง (linked list) ยาว n ที่เก็บค่า 1, 2, ..., n เรียงกัน จากนั้น (1) แตกรายการเป็นสองสาย โดยสายแรกเก็บครึ่งแรกที่มีจำนวนมากกว่า (เช่น n = 5 แบ่งเป็น 1,2,3 กับ 4,5) ส่วนสายหลังเก็บที่เหลือ (2) กลับด้านสายหลังให้ตัวชี้เดินจากท้ายมาหัว (3) ต่อสายหลังที่กลับด้านแล้วต่อท้ายสายแรก สุดท้ายให้พิมพ์ค่าในรายการใหม่เรียงติดกันเป็นข้อความ (ตัวอย่าง n = 5 ได้ 12354 เพราะสายหลัง 4,5 ถูกกลับเป็น 5,4 แล้วต่อท้าย 1,2,3) แต่ละช่องเก็บค่าเดียวและเชื่อมด้วย next',
+    inputDesc: '{ n: จำนวนช่องทั้งหมด }',
+    outputDesc: 'ค่าในรายการใหม่เรียงติดกัน (เช่น "12354")',
+    examples: [{ input: '{ "n": 5 }', output: '"12354"' }],
+    testCases: [
+      { input: { n: 1 }, output: '1' },
+      { input: { n: 2 }, output: '12' },
+      { input: { n: 3 }, output: '123' },
+      { input: { n: 4 }, output: '1243' },
+      { input: { n: 5 }, output: '12354' },
+      { input: { n: 6 }, output: '123654' },
+      { input: { n: 7 }, output: '1234765' },
+      { input: { n: 8 }, output: '12348765' }
+    ]
   }
 };

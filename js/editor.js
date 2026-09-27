@@ -1045,6 +1045,13 @@
       const bare = /^[ \t]*([A-Za-z_$][\w$]*)[ \t]*=(?!=)/gm;
       while ((m = bare.exec(src))) add(m[1], 'var', 'ควรใส่ let นำหน้า', false);
 
+      /* 2c) ชื่อคลาสที่ผระกาศไว้ */
+      const cidx = this._classIndex();
+      for (const cn of cidx.order){
+        const c = cidx.map[cn];
+        add(cn, 'fn', c.parent ? ('class สืบทอดจาก ' + c.parent) : 'class', false);
+      }
+
       /* 3) ชื่อฟังก์ชันที่ประกาศไว้ */
       const fns = /\bfunction\s+([A-Za-z_$][\w$]*)/g;
       while ((m = fns.exec(src))) add(m[1], 'fn', 'function', false);
@@ -1107,8 +1114,240 @@
       return null;
     }
 
+    /* ================= class / object literal =================
+       ตัวช่วยพิมพ์ต้องรู้ว่า
+         - คลาสชื่ออะไร มี field/method/getter อะไร สืบทอดจากอะไร
+         - ตัวแปรไหนถูกสร้างด้วย new คลาสอะไร
+         - object literal ที่เคอร์เซอร์อยู่ข้างใน มีสมาชิกอะไรบ้าง
+       เพื่อให้พิมพ์ this. / list. / super. แล้วเห็นชื่อที่ถูกต้อง */
+
+    /* จัดทำดัชนีคลาสทั้งไฟล์ (แคชไว้ ถ้าโค้ดยังยาวเท่าเดิม) */
+    _classIndex(){
+      const v = this.ta.value;
+      if (this._clsSrc === v) return this._cls;
+      const map = Object.create(null);
+      const order = [];
+      const re = /\bclass\s+([A-Za-z_$][\w$]*)\s*(?:extends\s+([A-Za-z_$][\w$]*))?\s*\{/g;
+      let m;
+      while ((m = re.exec(v))){
+        const name = m[1];
+        const open = m.index + m[0].length - 1;
+        const close = this._matchBrace(v, open);
+        if (close < 0) continue;
+        const body = v.slice(open + 1, close);
+        const info = {
+          name,
+          parent: m[2] || null,
+          open, close,
+          fields: [],
+          methods: [],
+          statics: [],
+          accessors: []
+        };
+        /* สมาชิกที่ประกาศใน body ระดับเดียว (ไม่นับที่ซ้อนกัน)
+           ตัวคั่นต้องเป็น ; { หรือบรรทัดใหม่เท่านั้น
+           ถ้าใส่ } ด้วย ตำแหน่งที่จับได้จะเป็นตัว } ซึ่งยังนับวงเล็บไม่สมดุล ทำให้ข้ามไปทั้ง */
+        const mm = /(^|[;{\n])\s*(static\s+)?(get\s+|set\s+)?([A-Za-z_$][\w$]*)\s*(\(|=|;|\n|$)/g;
+        const NOT_MEMBER = new Set(['constructor', 'return', 'new', 'if', 'for', 'while', 'do',
+          'const', 'let', 'var', 'else', 'switch', 'case', 'break', 'continue', 'function',
+          'class', 'extends', 'super', 'this', 'typeof', 'delete', 'void', 'try', 'catch', 'finally', 'throw']);
+        let x;
+        while ((x = mm.exec(body))){
+          if (this._braceDepth(body, x.index) !== 0) continue;
+          const isStatic = !!x[2];
+          const acc = (x[3] || '').trim();
+          const member = x[4];
+          if (NOT_MEMBER.has(member)) continue;
+          if (acc) { if (info.accessors.indexOf(member) < 0) info.accessors.push(member); continue; }
+          if (x[5] === '(') { (isStatic ? info.statics : info.methods).push(member); continue; }
+          if (isStatic) { if (info.statics.indexOf(member) < 0) info.statics.push(member); continue; }
+          if (info.fields.indexOf(member) < 0) info.fields.push(member);
+        }
+        /* this.X = ... ที่อยู่ใน class นี้ = field ของ class นี้ */
+        const th = /this\.([A-Za-z_$][\w$]*)\s*=(?!=)/g;
+        let y;
+        while ((y = th.exec(body))){
+          if (info.fields.indexOf(y[1]) < 0) info.fields.push(y[1]);
+        }
+        map[name] = info;
+        order.push(name);
+        re.lastIndex = close;
+      }
+      this._clsSrc = v;
+      this._cls = { map, order };
+      return this._cls;
+    }
+
+    /* หา } ที่ปิด { ที่ตำแหน่ง open (ข้ามสตริงกับคอมเมนต์) */
+    _matchBrace(v, open){
+      let d = 0, i = open;
+      const n = v.length;
+      while (i < n){
+        const c = v[i];
+        if (c === '/' && v[i + 1] === '/'){ const e = v.indexOf('\n', i); i = (e === -1) ? n : e; continue; }
+        if (c === '/' && v[i + 1] === '*'){ const e = v.indexOf('*/', i + 2); i = (e === -1) ? n : e + 2; continue; }
+        if (c === '"' || c === "'" || c === '`'){
+          const q = c; i++;
+          while (i < n){
+            if (v[i] === '\\'){ i += 2; continue; }
+            if (v[i] === q){ i++; break; }
+            i++;
+          }
+          continue;
+        }
+        if (c === '{') d++;
+        else if (c === '}'){ d--; if (d === 0) return i; }
+        i++;
+      }
+      return -1;
+    }
+
+    /* ความลึกของวงเล็บปีกกาที่ตำแหน่ง pos (0 = ระดับเดียวกับ body) */
+    _braceDepth(s, pos){
+      let d = 0;
+      for (let i = 0; i < pos && i < s.length; i++){
+        const c = s[i];
+        if (c === '{') d++;
+        else if (c === '}') d--;
+      }
+      return d;
+    }
+
+    /* สมาชิกทั้งหมดของคลาส รวมของคลาสแม่ (ไล่จากแม่ลงลูก) */
+    _classMembers(name, wantStatic){
+      const idx = this._classIndex();
+      const out = [];
+      const seen = new Set();
+      const chain = [];
+      let cur = idx.map[name];
+      while (cur){ chain.unshift(cur); cur = cur.parent ? idx.map[cur.parent] : null; }
+      for (const c of chain){
+        const add = (k, kind, what) => {
+          if (seen.has(k)) return;
+          seen.add(k);
+          out.push({ label: k, kind, detail: what + ' ของ ' + c.name });
+        };
+        for (const k of c.fields) add(k, 'fld', 'field');
+        if (wantStatic){
+          for (const k of c.statics) add(k, 'fn', 'static');
+        } else {
+          for (const k of c.methods) add(k, 'fn', 'method');
+          for (const k of c.accessors) add(k, 'fn', 'getter/setter');
+        }
+      }
+      return out;
+    }
+
+    /* คลาสที่เคอร์เซอร์อยู่ใน body ของมัน */
+    _classAt(pos){
+      const idx = this._classIndex();
+      for (const name of idx.order){
+        const c = idx.map[name];
+        if (pos > c.open && pos < c.close) return c;
+      }
+      return null;
+    }
+
+    /* สมาชิกของ object literal ที่ครอบตำแหน่ง pos อยู่
+       ต้องไล่จากวงเล็บที่ลึกสุดออกมา เพราะเคอร์เซอร์มักอยู่ใน body ของ method
+       ซึ่งเป็นวงเล็บอีกชั้นที่ไม่ใช่ object literal */
+    _objectMembersAt(pos){
+      const v = this.ta.value;
+      const stack = this._openBraces(v.slice(0, pos));
+      for (let i = stack.length - 1; i >= 0; i--){
+        const o = stack[i];
+        const prev = (o > 0 ? v[o - 1] : '').trim();
+        const looksLikeObject = prev === '=' || prev === '(' || prev === ',' || prev === ':'
+          || prev === '[' || prev === '>' || prev === '{' || prev === ';'
+          || (o === stack[0] && prev === '');
+        if (!looksLikeObject) continue;
+        const close = this._matchBrace(v, o);
+        if (close < 0) continue;
+        const names = this._memberNamesOf(v.slice(o + 1, close));
+        if (names.length) return { open: o, close, names };
+      }
+      return null;
+    }
+
+    /* ดึงชื่อสมาชิกออกจากข้อความใน object literal
+       ต้องให้ \s* หลังตัวคั่นด้วย ไม่งั้นสมาชิกตัวแรกที่มีการเยื้องบรรทัดจะหายไป */
+    _memberNamesOf(body){
+      const names = [];
+      const seen = new Set();
+      const push = (n) => { if (n && !seen.has(n)){ seen.add(n); names.push(n); } };
+      const kv = /(?:^|[,{}])\s*(?:'([^']+)'|"([^"]+)"|([A-Za-z_$][\w$]*)|(\d+))\s*:/g;
+      let x;
+      while ((x = kv.exec(body))) push(x[1] || x[2] || x[3] || x[4]);
+      const mt = /(?:^|[,{}])\s*(?:(?:get|set)\s+)?(?:'([^']+)'|"([^"]+)"|([A-Za-z_$][\w$]*))\s*\(/g;
+      while ((x = mt.exec(body))) push(x[1] || x[2] || x[3]);
+      return names;
+    }
+
+    /* ตัวแปรที่ถูกสร้างด้วย new คลาสอะไร เช่น const list = new Node(1) */
+    _instanceVars(){
+      const v = this.ta.value;
+      const out = Object.create(null);
+      const re = /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*new\s+([A-Za-z_$][\w$]*)/g;
+      let m;
+      while ((m = re.exec(v))) out[m[1]] = m[2];
+      return out;
+    }
+
+    /* object literal ที่ประกาศด้วยชื่อตัวแปร -> สมาชิกของมัน
+       รวมกรณี const child = Object.create(proto) ซึ่งสืบทอดจาก proto */
+    _namedObjects(){
+      const v = this.ta.value;
+      const out = Object.create(null);
+      const re = /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*\{/g;
+      let m;
+      while ((m = re.exec(v))){
+        const open = m.index + m[0].length - 1;
+        const close = this._matchBrace(v, open);
+        if (close < 0) continue;
+        const names = this._memberNamesOf(v.slice(open + 1, close));
+        out[m[1]] = names.map(n => ({ label: n, kind: 'fld', detail: 'ของ ' + m[1] }));
+        re.lastIndex = close;
+      }
+      const re2 = /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*Object\.create\(\s*([A-Za-z_$][\w$]*)\s*\)/g;
+      while ((m = re2.exec(v))){
+        const base = out[m[2]] || [];
+        out[m[1]] = base.map(x => ({ label: x.label, kind: 'fld', detail: 'สืบทอดจาก ' + m[2] }));
+      }
+      return out;
+    }
+
+    /* สมาชิกที่ควรขึ้นหลังจุด เมื่อ owner เป็น object ที่ผู้ใช้เขียนเอง */
+    _ownMembers(owner, pos){
+      if (!owner) return [];
+      if (owner === 'this') return this._thisMembers(pos);
+      if (owner === 'super') return this._superMembers(pos);
+      const inst = this._instanceVars()[owner];
+      if (inst && this._classIndex().map[inst]) return this._classMembers(inst, false);
+      const named = this._namedObjects()[owner];
+      if (named && named.length) return named;
+      return [];
+    }
+
+    /* รายการสำหรับ this.<tab> */
+    _thisMembers(pos){
+      const cls = this._classAt(pos);
+      if (cls) return this._classMembers(cls.name, false);
+      const obj = this._objectMembersAt(pos);
+      if (obj) return obj.names.map(n => ({ label: n, kind: 'fld', detail: 'ของ object นี้' }));
+      return [];
+    }
+
+    /* รายการสำหรับ super.<tab> — เริ่มที่คลาสแม่ ไม่ใช่คลาสตัวเอง */
+    _superMembers(pos){
+      const cls = this._classAt(pos);
+      if (!cls || !cls.parent) return [];
+      const idx = this._classIndex();
+      if (!idx.map[cls.parent]) return [];
+      return this._classMembers(cls.parent, false);
+    }
+
     /* ชุดวิธีที่ควรแนะนำหลังจุด เช่น Math. -> floor, nums. -> push */
-    _memberItems(prefix){
+    _memberItems(prefix, pos){
       const owner = prefix.replace(/\.$/, '');
       const out = [];
       const seen = new Set();
@@ -1125,12 +1364,43 @@
           });
         }
       };
+      /* รายการที่มี detail มาอยู่แล้ว (จากการสแกนโค้ดผู้ใช้) */
+      const pushItems = (arr) => {
+        for (const it of arr){
+          if (seen.has(it.label)) continue;
+          seen.add(it.label);
+          out.push({
+            label: it.label, kind: it.kind, detail: it.detail || '',
+            hot: false, snippet: null, pri: TOP_MEMBERS.has(it.label) ? 1 : 0
+          });
+        }
+      };
 
       /* 1) namespace ที่รู้จัก เช่น Math. console. JSON. — ต้องเจอก่อนเสมอ */
       if (STATIC[owner]) { push(STATIC[owner], 'fn'); return out; }
       if (OWNER_KIND[owner]) { push(METHODS[OWNER_KIND[owner]], 'meth'); return out; }
 
-      /* 2) เดาจากรูปแบบที่ประกาศไว้ */
+      /* 2) object ที่ผู้ใช้เขียนเอง: instance ของ class, this, super, object literal
+            ต้องเช็คก่อนการเดาชนิด ไม่งั้น this. จะได้รายการของ Array ไปแสดง */
+      const own = this._ownMembers(owner, pos === undefined ? this.ta.selectionStart : pos);
+      if (own.length){ pushItems(own); return out; }
+
+      /* 3) ชื่อคลาสที่ผู้ใช้เขียนเอง -> static method */
+      const cls = this._classIndex().map[owner];
+      if (cls){
+        for (const k of cls.statics){
+          if (seen.has(k)) continue;
+          seen.add(k);
+          out.push({ label: k, kind: 'fn', detail: 'static ของ ' + cls.name, hot: false, snippet: null, pri: 0 });
+        }
+        if (!seen.has('prototype')){
+          seen.add('prototype');
+          out.push({ label: 'prototype', kind: 'fld', detail: 'prototype ของ ' + cls.name, hot: false, snippet: null, pri: 0 });
+        }
+        return out;
+      }
+
+      /* 4) เดาจากรูปแบบที่ประกาศไว้ */
       const kind = this._typeOf(owner);
       if (kind && METHODS[kind]) { push(METHODS[kind], 'meth'); return out; }
       return out;
