@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&family=Noto+Sans+Thai:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="js/theme.css?v=64">
+<link rel="stylesheet" href="js/theme.css?v=65">
 <style>
 /* ============ LAYOUT 3 ส่วน ============ */
 .app{position:relative;z-index:1;display:flex;flex-direction:column;height:100vh;overflow:hidden}
@@ -28,7 +28,11 @@
 .chip.medium{background:rgba(227,179,65,.14);color:var(--warn)}
 .chip.hard{background:rgba(248,81,73,.14);color:var(--err)}
 .chip.score{background:var(--card);color:var(--fg3);border:1px solid var(--line2)}
-.side .desc{font-size:13.5px;line-height:1.85;color:var(--fg2);margin-bottom:16px}
+/* white-space: pre-line สำคัญมาก
+   โจทย์ที่เขียนเป็นหลายบรรทัดใน problems.js จะขึ้นบรรทัดใหม่ตามที่เขียน
+   ถ้าไม่ใส่ HTML จะยุบขึ้นเป็นบรรทัดเดียวยาว ๆ อ่านยากกว่าเดิม */
+.side .desc{font-size:13.5px;line-height:1.85;color:var(--fg2);margin-bottom:16px;
+            white-space:pre-line}
 
   /* ---------- เนื้อหาช่วยอ่านโจทย์ ----------
      แยกเป็นกล่องย่อย ๆ ไม่ยัดเป็นย้อหน้าเดียว
@@ -702,10 +706,10 @@
   </div>
 </aside>
 
-<script src="problems/problems.js?v=64"></script>
-<script src="problems/guides.js?v=64"></script>
-<script src="js/interpreter.js?v=64"></script>
-<script src="js/editor.js?v=64"></script>
-<script src="js/app.js?v=64"></script>
+<script src="problems/problems.js?v=65"></script>
+<script src="problems/guides.js?v=65"></script>
+<script src="js/interpreter.js?v=65"></script>
+<script src="js/editor.js?v=65"></script>
+<script src="js/app.js?v=65"></script>
 </body>
 </html>

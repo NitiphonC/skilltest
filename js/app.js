@@ -176,8 +176,8 @@
      บันทึกไว้ว่าเปิดถึงระดับไหนและดูเฉลยแบบไหนไปแล้ว
      เพื่อให้ครูเห็นว่าโจทย์ไหนนักเรียนต้องพึ่งคำใบ้ถึงระดับสุดท้าย */
   const HINT_KEY = 'cp_hints_v1';
-  const HINT_SRC = 'problems/solutions.js?v=64';
-  const GLOSS_SRC = 'problems/glossary.js?v=64';
+  const HINT_SRC = 'problems/solutions.js?v=65';
+  const GLOSS_SRC = 'problems/glossary.js?v=65';
   let hintData = null;      // window.HINTS
   let glossData = null;     // window.GLOSSARY
   let hintLoad = null;      // Promise กำลังโหลด
@@ -1028,7 +1028,7 @@
      ถ้าไฟล์นั้นยังไม่โหลดเสร็จ หรือโจทย์นี้ไม่มีคำอธิบาย
      ให้วางว่างไว้แล้วเงียบ ๆ ไป หน้าเว็บยังทำงานครบทุกอย่าง
      เพราะเป็นส่วนเสริม ไม่ใช่ส่วนที่โจทย์ต้องพึ่ง */
-  const GUIDE_SRC = 'problems/guides.js?v=64';
+  const GUIDE_SRC = 'problems/guides.js?v=65';
   let guideData = null;
   let guideLoad = null;
 
