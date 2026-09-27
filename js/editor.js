@@ -48,9 +48,11 @@
 
   /* วิธีของ Array / String / Map / Set — แนะนำตอนพิมพ์หลังจุด */
   const METHODS = {
+    /* ไม่มี keys/values/entries ของ Array เพราะเป็นเมธอดที่คืน iterator
+       นักเรียนแทบไม่เคยใช้ แต่พอขึ้นก็กินช่องรายการที่ควรได้ไปจาก push/length */
     'Array': ['length','push','pop','shift','unshift','slice','splice','concat','join','indexOf',
       'lastIndexOf','includes','reverse','find','findIndex','filter','map','forEach','reduce',
-      'some','every','sort','flat','fill','at','keys','values','entries'],
+      'some','every','sort','flat','fill','at'],
     'String': ['length','charAt','charCodeAt','indexOf','lastIndexOf','includes','startsWith',
       'endsWith','slice','substring','substr','split','replace','replaceAll','toUpperCase',
       'toLowerCase','trim','trimStart','trimEnd','repeat','padStart','padEnd','concat','at'],
@@ -112,7 +114,7 @@
 
   /* สมาชิกที่พิมพ์ต่อท้องไปบ่อยที่สุด ต้องอยู่บนสุดเสมอ
      ไม่งั้นจะโดนตัดตอนแสดง 12 รายการ เพราะเรียงตามความยาวชื่อ */
-  const TOP_MEMBERS = new Set(['length', 'push', 'size', 'get', 'set', 'add', 'has', 'keys', 'values']);
+  const TOP_MEMBERS = new Set(['length', 'push', 'size', 'get', 'set', 'add', 'has']);
 
   /* ตัวเปิด -> ตัวปิดที่ต้องใส่ให้อัตโนมัติ
      สำคัญ: กดอัตโนมัติได้เฉพาะตัวเปิด ถ้ากดตัวปิดต้อง "ข้ามผ่าน" ไม่ใช่เพิ่มคู่ใหม่ */
