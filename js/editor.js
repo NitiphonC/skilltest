@@ -22,6 +22,8 @@
     'Number.MAX_SAFE_INTEGER','Number.MIN_SAFE_INTEGER',
     'parseInt','parseFloat','isNaN','isFinite',
     'Infinity','NaN','undefined','globalThis',
+    /* namespace ที่เขียนเป็นชื่อเดี่ยว ๆ ไม่งั้นพิมพ์ Math จะไม่เจอ */
+    'Math','JSON','console',
     'String','Number','Boolean','Array','Object','Map','Set','require'];
 
   /* ค่าคงที่ที่ JS มีให้แต่ไม่ใช่ keyword และไม่ใช่ตัวในตัวที่เรียกได้ */
@@ -864,7 +866,7 @@
         if (am) add(am[1], 'fn', 'function', true);
       }
 
-      /* 2) ตัวแป��ที่ประกาศไว้ทั้งไฟล์ (รวม destructuring) */
+      /* 2) ตัวแปรที่ประกาศไว้ทั้งไฟล์ (รวม destructuring) */
       const decl = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)/g;
       let m;
       while ((m = decl.exec(src))) add(m[1], 'var', 'ตัวแปร', false);
@@ -964,14 +966,26 @@
       for (const g of GLOBALS) if (g.toLowerCase().startsWith(q) && !snipLabels.has(g)) items.push({ label: g, kind: 'glb', detail: 'ค่าคงที่' });
       for (const k of KEYWORDS) if (k.toLowerCase().startsWith(q) && !snipLabels.has(k)) items.push({ label: k, kind: 'kw' });
       for (const s of Object.keys(SNIPPETS)) if (s.startsWith(q)) items.push({ label: s, kind: 'snip', snippet: SNIPPETS[s] });
-      for (const b of BUILTINS) if (b.toLowerCase().startsWith(q)) items.push({ label: b, kind: 'fn' });
+      for (const b of BUILTINS){
+        if (!b.toLowerCase().startsWith(q)) continue;
+        /* ชื่อที่มีจุด เช่น Math.floor ให้ขึ้นต่อเมื่อพิมพ์จุดไปแล้วเท่านั้น
+           ไม่งั้นพิมพ์ "Mat" ก็จะเห็น Math.abs, Math.pow รวดไปหมด */
+        if (b.indexOf('.') >= 0 && word.indexOf('.') < 0) continue;
+        items.push({ label: b, kind: 'fn' });
+      }
 
       if (!items.length){ this.closeAC(); return; }
+      items.sort((a, b) => rank(a) - rank(b) || a.label.length - b.label.length);
+      /* กันชื่อซ้ำ: Infinity/NaN/undefined อยู่ทั้งใน GLOBALS, KEYWORDS และ BUILTINS
+         ถ้าไม่กันจะขึ้น 2-3 แถวเหมือนกัน ให้เก็บแถวที่จัดอันดับดีที่สุดไว้แถวเดียว */
       const seen = new Set();
-      const uniq = items.filter(it => { const k = it.label + '|' + it.kind; if (seen.has(k)) return false; seen.add(k); return true; });
-      uniq.sort((a, b) => rank(a) - rank(b) || a.label.length - b.label.length);
-      items = uniq;
-      this.acItems = items.slice(0, 12);
+      const uniq = items.filter(it => {
+        const k = it.label.toLowerCase();
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      });
+      this.acItems = uniq.slice(0, 12);
       this.acIndex = 0;
       this._acStart = start;
       this._acWord = word;
@@ -1107,10 +1121,10 @@
     if (i.kind === 'val') return 0;
     if (i.kind === 'par') return 1;
     if (i.kind === 'var') return 2;
-    if (i.kind === 'fn') return 3;
-    if (i.kind === 'snip') return 4;
-    if (i.kind === 'meth') return 4;
-    if (i.kind === 'glb') return 5;
+    if (i.kind === 'glb') return 3;   /* ค่าคงที่ เช่น Infinity อธิบายได้ตรงกว่าการเรียกฟังก์ชัน */
+    if (i.kind === 'fn') return 4;
+    if (i.kind === 'snip') return 5;
+    if (i.kind === 'meth') return 5;
     if (i.kind === 'kw') return 6;
     return 7;
   }
