@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&family=Noto+Sans+Thai:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="js/theme.css?v=63">
+<link rel="stylesheet" href="js/theme.css?v=64">
 <style>
 /* ============ LAYOUT 3 ส่วน ============ */
 .app{position:relative;z-index:1;display:flex;flex-direction:column;height:100vh;overflow:hidden}
@@ -29,6 +29,35 @@
 .chip.hard{background:rgba(248,81,73,.14);color:var(--err)}
 .chip.score{background:var(--card);color:var(--fg3);border:1px solid var(--line2)}
 .side .desc{font-size:13.5px;line-height:1.85;color:var(--fg2);margin-bottom:16px}
+
+  /* ---------- เนื้อหาช่วยอ่านโจทย์ ----------
+     แยกเป็นกล่องย่อย ๆ ไม่ยัดเป็นย้อหน้าเดียว
+     เพราะข้อมูลเยอะแล้วอ่านยากกว่าอ่านสั้น ๆ แต่ถ้าสั้นเกินไปก็จะงงเหมือนเดิม
+     กล่อง walkthrough กางไว้เลย ส่วนอีกสองกล่องพับไว้
+     เพราะ 9 จาก 10 คนจะอ่านตัวอย่างเดินทาง แต่ไม่กี่คนจะเปิด "ข้อควรระวัง" */
+.gd{margin:0 0 14px;border:1px solid var(--line);border-radius:9px;
+     background:var(--bg);overflow:hidden}
+.gd-h{display:flex;align-items:center;gap:8px;width:100%;padding:9px 11px;
+     background:none;border:0;color:var(--fg);font:inherit;font-size:12.5px;
+     font-weight:600;cursor:pointer;text-align:left}
+.gd-h:hover{background:var(--bg2)}
+.gd-h:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+.gd-ic{width:15px;height:15px;flex:none;color:var(--acc)}
+.gd-chev{width:14px;height:14px;flex:none;margin-left:auto;color:var(--fg3);
+     transition:transform .16s ease}
+.gd.open .gd-chev{transform:rotate(90deg)}
+.gd-b{display:none;padding:0 12px 12px}
+.gd.open .gd-b{display:block}
+.gd-w{font-size:12.8px;line-height:1.85;color:var(--fg2);
+     white-space:pre-wrap;word-break:break-word;
+     background:var(--bg2);border-left:2px solid var(--acc);
+     border-radius:0 6px 6px 0;padding:9px 11px}
+.gd-b + .gd-b{margin-top:10px}
+.gd-row{font-size:12.5px;line-height:1.8;color:var(--fg2);
+     white-space:pre-wrap;word-break:break-word;display:flex;gap:8px}
+.gd-row b{flex:none;font-weight:700;font-size:11.5px;color:var(--fg3);padding-top:1px}
+.gd-row.warn b{color:var(--warn)}
+
 .blk{margin-bottom:14px}
 .blk-t{display:flex;align-items:center;gap:6px;margin-bottom:6px;font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.7px;text-transform:uppercase;color:var(--fg3)}
 .blk-t svg{width:12px;height:12px}
@@ -38,7 +67,15 @@
 .hint{margin-top:8px;padding:9px 11px;border-radius:8px;background:rgba(0,212,255,.07);border:1px solid rgba(0,212,255,.2);font-size:12px;line-height:1.8;color:var(--fg2)}
 .hint code{font-family:var(--mono);font-size:11px;color:var(--acc2);background:rgba(0,212,255,.1);padding:1px 4px;border-radius:4px}
 .ex{margin-bottom:8px}
-.ex-head{font-family:var(--mono);font-size:10px;color:var(--fg3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px}
+.ex-head{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:10px;
+     color:var(--fg3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px}
+.ex-head .ex-run{margin-left:auto;text-transform:none;letter-spacing:0;font-size:11px}
+
+/* ป้ายบอกว่ารันแล้วตรงกับตัวอย่างไหม
+   นักเรียนไม่รู้ว่า output ที่ได้ "ถูก" หรือ "เป็นรูปแบบอื่น"
+   การบอกตรง ๆ ช่วยได้มากกว่าปล่อยให้เดาเอง */
+.tag.ex-ok{color:var(--ok)}
+.tag.ex-no{color:var(--warn)}
 
 .right{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
 .edbar{
@@ -496,6 +533,11 @@
           <div class="blk-t">ตัวอย่าง</div>
           <div id="pExamples"></div>
         </div>
+
+        <!-- เนื้อหาช่วยอ่านโจทย์: ตัวอย่างเดินทาง / ขนาดข้อมูล / ข้อควรระวัง
+             มาจาก problems/guides.js ถ้าไฟล์นั้นยังไม่โหลด ก็ไม่แสดงส่วนนี้
+             หน้าเว็บยังทำงานครบทุกอย่าง เพราะเป็นส่วนเสริม -->
+        <div id="pGuide"></div>
       </div>
     </aside>
 
@@ -660,9 +702,10 @@
   </div>
 </aside>
 
-<script src="problems/problems.js?v=63"></script>
-<script src="js/interpreter.js?v=63"></script>
-<script src="js/editor.js?v=63"></script>
-<script src="js/app.js?v=63"></script>
+<script src="problems/problems.js?v=64"></script>
+<script src="problems/guides.js?v=64"></script>
+<script src="js/interpreter.js?v=64"></script>
+<script src="js/editor.js?v=64"></script>
+<script src="js/app.js?v=64"></script>
 </body>
 </html>

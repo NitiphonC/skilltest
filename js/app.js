@@ -176,8 +176,8 @@
      บันทึกไว้ว่าเปิดถึงระดับไหนและดูเฉลยแบบไหนไปแล้ว
      เพื่อให้ครูเห็นว่าโจทย์ไหนนักเรียนต้องพึ่งคำใบ้ถึงระดับสุดท้าย */
   const HINT_KEY = 'cp_hints_v1';
-  const HINT_SRC = 'problems/solutions.js?v=63';
-  const GLOSS_SRC = 'problems/glossary.js?v=63';
+  const HINT_SRC = 'problems/solutions.js?v=64';
+  const GLOSS_SRC = 'problems/glossary.js?v=64';
   let hintData = null;      // window.HINTS
   let glossData = null;     // window.GLOSSARY
   let hintLoad = null;      // Promise กำลังโหลด
@@ -1007,13 +1007,111 @@
     $('pInput').textContent = P.inputDesc;
     $('varName').textContent = P.inputName || 'data';
     $('pOutput').textContent = P.outputDesc;
+    /* ตัวอย่างแต่ละอันต้อง "รันได้" ไม่ใช่แค่อ่าน
+       เพราะนักเรียนจะกด Run ทันทีที่เห็นตัวอย่าง
+       แต่ละอันจึงต้องมีปุ่มของตัวเอง และต้องแยก input/output ให้ชัด */
     $('pExamples').innerHTML = P.examples.map((e, i) => `
       <div class="ex">
-        <div class="ex-head">ตัวอย่างที่ ${i + 1}</div>
+        <div class="ex-head">
+          <span>ตัวอย่างที่ ${i + 1}</span>
+          <button class="btn sm ex-run" type="button" data-ex="${i}">ลองรัน</button>
+        </div>
         <div class="blk in"><pre>${esc(e.input)}</pre></div>
         <div class="blk out"><pre>${esc(e.output)}</pre></div>
       </div>`).join('');
+    renderGuide();
     document.title = P.title + ' — Code Practice';
+  }
+
+  /* ---------------- เนื้อหาช่วยอ่านโจทย์ ----------------
+     มาจาก problems/guides.js ซึ่งโหลดพร้อม problems.js
+     ถ้าไฟล์นั้นยังไม่โหลดเสร็จ หรือโจทย์นี้ไม่มีคำอธิบาย
+     ให้วางว่างไว้แล้วเงียบ ๆ ไป หน้าเว็บยังทำงานครบทุกอย่าง
+     เพราะเป็นส่วนเสริม ไม่ใช่ส่วนที่โจทย์ต้องพึ่ง */
+  const GUIDE_SRC = 'problems/guides.js?v=64';
+  let guideData = null;
+  let guideLoad = null;
+
+  function loadGuides(){
+    if (window.GUIDES) { guideData = window.GUIDES; return Promise.resolve(guideData); }
+    /* ถ้า HTML โหลด scripts.js ไว้แล้ว แต่ยังไม่เสร็จ รอสักครู่ก่อนสร้าง script ซ้ำ
+       ไม่งั้นจะโหลดไฟล์เดิมสองครั้ง และอาจได้โค้ดเก่าทับของใหม่ */
+    if (document.querySelector('script[src*="problems/guides.js"]')) {
+      return new Promise(resolve => {
+        let n = 0;
+        const t = setInterval(() => {
+          n++;
+          if (window.GUIDES || n > 60) {
+            clearInterval(t);
+            guideData = window.GUIDES || null;
+            resolve(guideData);
+          }
+        }, 50);
+      });
+    }
+    if (guideLoad) return guideLoad;
+    guideLoad = new Promise(resolve => {
+      const s = document.createElement('script');
+      s.src = GUIDE_SRC;
+      s.onload = () => { guideData = window.GUIDES || null; resolve(guideData); };
+      s.onerror = () => resolve(null);
+      document.head.appendChild(s);
+    });
+    return guideLoad;
+  }
+
+  const GD_ICON = {
+    walk: '<svg class="gd-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg>',
+    limit: '<svg class="gd-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>',
+    note: '<svg class="gd-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>'
+  };
+  const GD_CHEV = '<svg class="gd-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>';
+
+  function gdBox(kind, title, bodyHtml, openByDefault){
+    return '<div class="gd' + (openByDefault ? ' open' : '') + '" data-gd="' + kind + '">'
+      + '<button class="gd-h" type="button">' + GD_ICON[kind]
+      + '<span>' + esc(title) + '</span>' + GD_CHEV + '</button>'
+      + '<div class="gd-b">' + bodyHtml + '</div></div>';
+  }
+
+  function renderGuide(){
+    const box = $('pGuide');
+    if (!box) return;
+    const g = guideData && guideData[P.id];
+    if (!g) { box.innerHTML = ''; return; }
+    let html = '';
+    if (g.walkthrough) {
+      html += gdBox('walk', 'คิดยังไงจึงได้คำตอบนี้',
+        '<div class="gd-w">' + esc(g.walkthrough) + '</div>', true);
+    }
+    if (g.limits) {
+      html += gdBox('limit', 'ข้อมูลใหญ่แค่ไหน',
+        '<div class="gd-row"><b>ขนาด</b><span>' + esc(g.limits) + '</span></div>', false);
+    }
+    if (g.notes) {
+      html += gdBox('note', 'ข้อควรระวัง',
+        '<div class="gd-row warn"><b>ระวัง</b><span>' + esc(g.notes) + '</span></div>', false);
+    }
+    box.innerHTML = html;
+  }
+
+  function wireGuide(){
+    const box = $('pGuide');
+    if (!box) return;
+    box.addEventListener('click', e => {
+      const h = e.target.closest('.gd-h');
+      if (!h) return;
+      h.parentNode.classList.toggle('open');
+    });
+    /* หัวกล่องเป็นปุ่มจริงแล้ว แต่ใช้ div หุ้มไว้เพื่อจัดวาง
+       จึงต้องรับ Enter/Space เองด้วย ไม่งั้นกดด้วยคีย์บอร์ดไม่ได้ */
+    box.addEventListener('keydown', e => {
+      if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+      const h = e.target.closest('.gd-h');
+      if (!h) return;
+      e.preventDefault();
+      h.parentNode.classList.toggle('open');
+    });
   }
 
   /* ================= helpers ================= */
@@ -1057,9 +1155,15 @@
     box.scrollTop = box.scrollHeight;
   }
 
-  function runSample() {
-    const tc = P.testCases[0];
-    const inputText = JSON.stringify(tc.input);
+  /* รันตัวอย่างที่เลือก
+     ไม่ใช้ test case เพราะนักเรียนเห็นแต่ตัวอย่าง
+     ถ้าใช้ test case นักเรียนจะสงสัยว่า input ที่รันตรงกับที่เห็นในโจทย์หรือเปล่า
+     ตัวอย่างแต่ละอันมี input เป็นข้อความ JSON อยู่แล้ว จึงส่งตรง ๆ ได้เลย
+     ถ้าไม่บอกว่าจะรันตัวไหน ให้รันตัวแรก */
+  function runSample(exIndex) {
+    const ex = P.examples[exIndex || 0];
+    if (!ex) return;
+    const inputText = ex.input;
     $('runTag').textContent = 'กำลังรัน…';
     setBusy(true);
     nextTick(() => {
@@ -1076,8 +1180,31 @@
         out = r.ctx.out;
       } catch (e) { err = e; }
       showRaw(out, err);
+      /* บอกด้วยว่าตรงกับตัวอย่างไหม
+         นักเรียนจะได้รู้ทันทีว่าเขียนถูกทางหรือยัง
+         โดยไม่ต้องเดาเองว่า output ที่ได้ "ถูก" หรือ "เป็นแค่รูปแบบอื่น" */
+      const mark = exIndex || 0;
       $('runTag').textContent = out.length ? out.length + ' บรรทัด' : '';
+      $('runTag').classList.remove('ex-ok', 'ex-no');
+      if (!err) {
+        const passEx = matchSample(out, ex.output);
+        $('runTag').classList.add(passEx ? 'ex-ok' : 'ex-no');
+        $('runTag').textContent = passEx ? 'ตรงกับตัวอย่างที่ ' + (mark + 1)
+          : 'ยังไม่ตรงกับตัวอย่างที่ ' + (mark + 1);
+      }
       setBusy(false);
+    });
+  }
+
+  /* เทียบผลลัพธ์กับคำตอบของตัวอย่าง
+     ต้องอ่านผลลัพธ์เป็น JSON ก่อน เพราะนักเรียนพิมพ์ Array ด้วย JSON.stringify
+     แต่ตัวอย่างเขียนคำตอบเป็น [1,2,3] ไม่ใช่ "[1,2,3]" */
+  function matchSample(logs, expected) {
+    return logs.some(l => {
+      const t = String(l).trim();
+      let v;
+      try { v = JSON.parse(t); } catch (e) { v = t; }
+      return looseEq(v, expected);
     });
   }
 
@@ -1552,7 +1679,16 @@
     $('rawOut').innerHTML = '<span class="dimline">(ยังไม่มีผลลัพธ์)</span>';
     $('subBody').innerHTML = '<div class="empty">กด Submit เพื่อตรวจทุก Test Case</div>';
 
-    $('btnRun').addEventListener('click', runSample);
+    $('btnRun').addEventListener('click', () => runSample(0));
+    /* ปุ่ม "ลองรัน" ของแต่ละตัวอย่าง
+       นักเรียนต้องลองได้ทุกตัวอย่าง ไม่ใช่แค่ตัวแรก
+       เพราะตัวอย่างที่ 2 คือเคสขอบ ซึ่งมักพลาด */
+    $('pExamples').addEventListener('click', e => {
+      const b = e.target.closest('.ex-run');
+      if (!b) return;
+      const i = Number(b.getAttribute('data-ex'));
+      runSample(Number.isFinite(i) ? i : 0);
+    });
     $('btnSubmit').addEventListener('click', submit);
     $('btnDebug').addEventListener('click', () => dbgToggle(!dbgOn));
     $('btnReset').addEventListener('click', () => {
@@ -1570,7 +1706,11 @@
     $('fileImport').addEventListener('change', e => handleImportFile(e.target.files && e.target.files[0]));
     wireHints();
     wireLab();
+    wireGuide();
     paintHintBtn();
+    /* คำอธิบายโจทย์โหลดแยกจาก problems.js เพราะเป็นเนื้อหาที่แก้บ่อย
+       ถ้าโหลดไม่ทัน เมื่อโหลดเสร็จแล้วค่อยวาดเพิ่ม จะได้ไม่ต้องรอให้ผู้ใช้รีเฟรช */
+    loadGuides().then(renderGuide);
     /* ปุ่ม sidebar: จอกว้างยุบ/ขยายในแถบ, จอแคบเป็น panel เลื่อนเข้ามา */
     const sideEl = $('side');
     const bgEl = $('sidebg');
