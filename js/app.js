@@ -176,8 +176,10 @@
      บันทึกไว้ว่าเปิดถึงระดับไหนและดูเฉลยแบบไหนไปแล้ว
      เพื่อให้ครูเห็นว่าโจทย์ไหนนักเรียนต้องพึ่งคำใบ้ถึงระดับสุดท้าย */
   const HINT_KEY = 'cp_hints_v1';
-  const HINT_SRC = 'problems/solutions.js?v=61';
+  const HINT_SRC = 'problems/solutions.js?v=63';
+  const GLOSS_SRC = 'problems/glossary.js?v=63';
   let hintData = null;      // window.HINTS
+  let glossData = null;     // window.GLOSSARY
   let hintLoad = null;      // Promise กำลังโหลด
   let hintOpenLv = [];      // ระดับที่เปิดค้างไว้ในรอบนี้
   let hintOpenSol = [];     // การ์ดเฉลยที่เปิดค้างไว้ในรอบนี้
@@ -205,15 +207,35 @@
     paintHintBtn();
   }
 
-  function loadHints(){
-    if (window.HINTS) { hintData = window.HINTS; return Promise.resolve(hintData); }
-    if (hintLoad) return hintLoad;
-    hintLoad = new Promise((resolve, reject) => {
+  /* โหลดข้อมูลคำใบ้ กับ คำศัพท์ประกอบ เป็นคู่กัน
+     แยกสองไฟล์เพราะ glossary ใหญ่กว่าเดิมมาก (151 KB) และไม่จำเป็นกับทุกคน
+     ถ้าไฟล์ใดโหลดไม่ขึ้น อีกไฟล์ยังใช้ได้ปกติ — จึงใช้ allSettled ไม่ใช่ all */
+  function loadScriptOnce(src, pick){
+    if (pick()) return Promise.resolve(pick());
+    return new Promise(resolve => {
       const s = document.createElement('script');
-      s.src = HINT_SRC;
-      s.onload = () => { hintData = window.HINTS || {}; resolve(hintData); };
-      s.onerror = () => reject(new Error('โหลดข้อมูลคำใบ้ไม่สำเร็จ'));
+      s.src = src;
+      s.onload = () => resolve(pick() || null);
+      s.onerror = () => resolve(null);
       document.head.appendChild(s);
+    });
+  }
+
+  function loadHints(){
+    if (window.HINTS && window.GLOSSARY) {
+      hintData = window.HINTS;
+      glossData = window.GLOSSARY;
+      return Promise.resolve(hintData);
+    }
+    if (hintLoad) return hintLoad;
+    hintLoad = Promise.all([
+      loadScriptOnce(HINT_SRC, () => window.HINTS),
+      loadScriptOnce(GLOSS_SRC, () => window.GLOSSARY)
+    ]).then(res => {
+      hintData = res[0] || {};
+      glossData = res[1] || null;
+      if (!hintData[P.id]) throw new Error('โหลดข้อมูลคำใบ้ไม่สำเร็จ');
+      return hintData;
     });
     return hintLoad;
   }
@@ -257,6 +279,7 @@
       } else {
         html += '<div class="hlvl-body">'
           + '<div>' + esc(hs[2] || '') + '</div>'
+          + renderStarterTerms()
           + renderSolutions(entry, st)
           + '</div>';
       }
@@ -296,14 +319,180 @@
       }
       if (s.code) {
         html += '<div class="sol-lb">โค้ด</div><div class="sol-code">'
-          + '<pre><code>' + esc(s.code) + '</code></pre>'
+          + renderSolCode(s.code)
           + '<button class="btn sm sol-copy" type="button">คัดลอก</button>'
-          + '</div>';      }
+          + '</div>';
+        html += renderTerms(i, s.code);
+      }
       html += '<div class="sol-note">ลองเขียนเองก่อนเปิดดูนะ — ถ้าลองแล้วไม่ออก '
         + 'เทียบกับเฉลยนี้จะได้เร็วกว่าการเริ่มใหม่ตั้งแต่ต้น</div>';
       html += '</div></div>';
     }
     return html;
+  }
+
+  /* ---------- โค้ดเฉลย: แยกทีละบรรทัด เพื่อชี้กลับไปบรรทัดที่ใช้ศัพท์ได้ ----------
+     ถ้าต้องการไฮไลต์บรรทัด ต้องมี element ต่อบรรทัด ไม่ใช่ข้อความก้อนเดียว
+     เลขบรรทัดสร้างด้วย CSS counter เพื่อไม่ให้เพิ่มตัวอักษรลงในข้อความ
+     (ถ้าใส่ตัวเลขลงในข้อความ ปุ่มคัดลอกจะได้ตัวเลขปนไปด้วย) */
+  function renderSolCode(code){
+    const lines = String(code).split('\n');
+    return '<pre class="sol-pre"><code>'
+      + lines.map((ln, i) =>
+          '<span class="sl" data-n="' + (i + 1) + '">' + esc(ln) + '</span>').join('')
+      + '</code></pre>';
+  }
+
+  /* อ่านโค้ดจากกล่องที่เรนเดอร์เป็นบรรทัด ต้องใส่ขี้บรรทัดกลับเอง
+     เพราะแต่ละบรรทัดเป็นคนละ element (เพื่อไฮไลต์ทีละบรรทัดได้)
+     ถ้าใช้ textContent ตรง ๆ จะได้โค้ดติดกันเป็นบรรทัดเดียว — เคยพลาดมาแล้ว */
+  function codeTextOf(pre){
+    const ls = pre ? pre.querySelectorAll('.sl') : [];
+    if (!ls.length) return pre ? pre.textContent : '';
+    return Array.prototype.map.call(ls, x => x.textContent).join('\n');
+  }
+
+  /* นักเรียนอาจกด Ctrl+A / Ctrl+C เองในกล่องโค้ดแทนที่จะกดปุ่มคัดลอก
+     ต้องแทรกขี้บรรทัดกลับให้เหมือนกัน ไม่งั้นจะได้โค้ดบรรทัดเดียว
+     ทำเฉพาะเมื่อข้อความที่ลอกอยู่ในกล่อง .sol-pre เท่านั้น
+
+     วิธีทำ: ไม่ได้อ่านจาก textContent เพราะไม่มีขี้บรรทัดอยู่แล้ว
+     จึงต้องไล่ทีละบรรทัด แล้วต่อด้วยขี้บรรทัดเอง
+     เลือกแค่บรรทัดเดียวที่ไม่ได้เลือกทั้งบรรทัด ให้เบราว์เซอร์จัดการเอง
+     เพราะโค้ดที่ตั้งใจลอกมักเป็นทั้งก้อนอยู่แล้ว */
+  function fixCodeCopy(e){
+    if (!e.target || !e.target.closest) return;
+    const pre = e.target.closest('.sol-pre');
+    if (!pre || !window.getSelection) return;
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    const anc = range.commonAncestorContainer;
+    if (!pre.contains(anc) && anc !== pre) return;
+
+    const picked = [];
+    const all = pre.querySelectorAll('.sl');
+    for (let i = 0; i < all.length; i++) {
+      const sl = all[i];
+      if (!sl.getClientRects().length) continue;          // อยู่ในกล่องที่ซ่อนอยู่ ไม่ต้องเอา
+      if (!range.intersectsNode(sl)) continue;
+      picked.push(sl.textContent);
+    }
+    if (picked.length < 2) return;                        // ไม่ครบสองบรรทัด ไม่ต้องแก้
+
+    const text = picked.join('\n');
+    if (e.clipboardData) {
+      e.clipboardData.setData('text/plain', text);
+      e.preventDefault();
+    }
+  }
+
+  /* ---------- คำศัพท์ที่ใช้ในเฉลยแต่ละแบบ ----------
+     ตารางว่าเฉลยแบบไหนใช้ศัพท์อะไร สร้างจากการสแกนโค้ดจริง (ดู test-glossary.js)
+     จึงไม่มีทางตกหล่น และแต่ละแบบเห็นเฉพาะศัพท์ของตัวเอง */
+  function termInfo(pid, key, name){
+    const G = glossData;
+    if (!G) return null;
+    if (key) return G.api[key] || null;
+    return (G.helpers && G.helpers[pid] && G.helpers[pid][name]) || null;
+  }
+
+  /* ชื่อสั้นที่นักเรียนเห็นในโค้ดจริง เช่น Array.push -> push
+     ใช้ตอนค้นหาบรรทัดที่ใช้ สำหรับศัพท์ที่สแกนหาเลขบรรทัดไม่ได้ */
+  function termShort(key){
+    const i = key.lastIndexOf('.');
+    return i < 0 ? key : key.slice(i + 1);
+  }
+
+  /* ถ้าตารางไม่มีเลขบรรทัด (เช่น require ที่อยู่บรรทัดนำ) ให้หาจากข้อความโค้ดแทน */
+  function termLines(code, key, given){
+    const use = (given || []).filter(n => n >= 1);
+    if (use.length) return use;
+    const short = termShort(key);
+    const all = String(code).split('\n');
+    const out = [];
+    for (let i = 0; i < all.length && out.length < 4; i++) {
+      if (all[i].indexOf(short) >= 0) out.push(i + 1);
+    }
+    return out;
+  }
+
+  function renderTerms(solIndex, code){
+    const G = glossData;
+    const m = G && G.map && G.map[P.id];
+    const info = m && m.solutions && m.solutions[solIndex];
+    if (!info) return '';
+    const terms = (info.terms || []).map(k => ({ key: k, name: null }));
+    const helpers = (info.helpers || []).map(n => ({ key: null, name: n }));
+    const all = terms.concat(helpers);
+    if (!all.length) return '';
+    /* กางไว้ตั้งแต่แรก เพราะจุดประสงค์ของกล่องนี้คือให้นักเรียนเจอคำอธิบาย
+       ตอนกำลังสงสัย ถ้ายังต้องกดอีกครั้งก็เท่ากับไม่มี */
+    return '<div class="tm-wrap open" data-sol="' + solIndex + '">'
+      + '<div class="tm-head" data-tm="1" role="button" tabindex="0">'
+      + '<span class="tm-chev" aria-hidden="true">' + CHEV + '</span>'
+      + '<span>ศัพท์ที่ใช้ในเฉลยนี้ (' + all.length + ')</span>'
+      + '<span class="tm-hint">อ่านเจาะลึกทีละคำ</span>'
+      + '</div>'
+      + '<div class="tm-list">' + all.map(t => renderTerm(P.id, t, info, code)).join('') + '</div>'
+      + '</div>';
+  }
+
+  function renderTerm(pid, t, info, code){
+    const key = t.key;
+    const e = termInfo(pid, key, t.name);
+    if (!e) return '';
+    const lines = termLines(code, key || t.name,
+      key ? (info.lines || {})[key] : (info.helperLines || {})[t.name]);
+    const chips = lines.map(n =>
+      '<button class="tm-line" type="button" data-goto="' + n + '">บรรทัด ' + n + '</button>'
+    ).join('');
+    return '<div class="tm-item" data-term="' + esc(key || t.name) + '">'
+      + '<button class="tm-btn" type="button" aria-expanded="false">'
+      + '<span class="tm-nm">' + esc(key || t.name) + '</span>'
+      + '<span class="tm-kind">' + esc(e.kind || '') + '</span>'
+      + '<span class="tm-w">' + esc(e.what || '') + '</span>'
+      + CHEV
+      + '</button>'
+      + '<div class="tm-body">'
+      + '<dl class="tm-dl">'
+      + '<dt>ทำงานยังไง</dt><dd>' + esc(e.how || '') + '</dd>'
+      + (e.returns ? '<dt>คืนค่าอะไร</dt><dd>' + esc(e.returns) + '</dd>' : '')
+      + (e.note ? '<dt class="tm-dt-note">หมายเหตุ</dt><dd class="tm-dd-note">' + esc(e.note) + '</dd>' : '')
+      + '</dl>'
+      + (e.eg ? '<div class="tm-eg">' + renderSolCode(e.eg) + '</div>' : '')
+      + (e.gotcha ? '<div class="tm-gotcha"><b>ข้อควรระวัง</b>' + esc(e.gotcha) + '</div>' : '')
+      + (chips ? '<div class="tm-src">ในเฉลยนี้ใช้ที่ ' + chips + '</div>' : '')
+      + '</div></div>';
+  }
+
+  /* ---------- ศัพท์ในโค้ดเริ่มต้น (เหมือนกันทุกโจทย์) ----------
+     นักเรียนเจอบรรทัดเหล่านี้ก่อนเขียนโค้ดแม้แต่บรรทัดเดียว
+     จึงต้องมีคำอธิบายตั้งแต่ก่อน ไม่ใช่รอให้เปิดเฉลย */
+  function renderStarterTerms(){
+    const G = glossData;
+    const m = G && G.map && G.map[P.id];
+    if (!m || !Array.isArray(m.starter) || !m.starter.length) return '';
+    const items = m.starter.map(k => {
+      const e = G.api[k];
+      if (!e) return '';
+      return '<div class="tm-sitem" data-term="' + esc(k) + '">'
+        + '<button class="tm-sbtn" type="button" aria-expanded="false">'
+        + '<span class="tm-nm">' + esc(k) + '</span>'
+        + '<span class="tm-w">' + esc(e.what || '') + '</span>' + CHEV + '</button>'
+        + '<div class="tm-sbody">' + esc(e.how || '')
+        + (e.gotcha ? '<div class="tm-gotcha"><b>ข้อควรระวัง</b>' + esc(e.gotcha) + '</div>' : '')
+        + '</div></div>';
+    }).join('');
+    if (!items) return '';
+    return '<div class="tm-starter" data-tm="1">'
+      + '<div class="tm-head" role="button" tabindex="0">'
+      + '<span class="tm-chev" aria-hidden="true">' + CHEV + '</span>'
+      + '<span>ศัพท์ในโค้ดเริ่มต้น (' + m.starter.length + ')</span>'
+      + '<span class="tm-hint">มีอยู่ในทุกโจทย์</span>'
+      + '</div>'
+      + '<div class="tm-list">' + items + '</div>'
+      + '</div>';
   }
 
   function paintHintFoot() {
@@ -387,9 +576,9 @@
       /* คัดลอกเฉลยไปที่ clipboard */
       const cp = e.target.closest('.sol-copy');
       if (cp) {
-        const pre = cp.parentNode.querySelector('pre');
+        const pre = cp.parentNode.querySelector('.sol-pre');
         if (!pre) return;
-        const text = pre.textContent;
+        const text = codeTextOf(pre);
         const done = () => {
           const old = cp.textContent;
           cp.textContent = 'คัดลอกแล้ว';
@@ -400,7 +589,25 @@
         } else {
           window.prompt('คัดลอกโค้ดนี้', text);
         }
+        return;
       }
+
+      /* ---------------- คำศัพท์ ---------------- */
+      /* เปิด/ปิดกล่อง "ศัพท์ที่ใช้ในเฉลยนี้" หรือ "ศัพท์ในโค้ดเริ่มต้น" */
+      const tmHead = e.target.closest('.tm-head');
+      if (tmHead) { tmHead.parentNode.classList.toggle('open'); return; }
+      /* เปิด/ปิดคำอธิบายของศัพท์หนึ่งคำ */
+      const tmBtn = e.target.closest('.tm-btn, .tm-sbtn');
+      if (tmBtn) {
+        const item = tmBtn.parentNode;
+        const willOpen = !item.classList.contains('open');
+        item.classList.toggle('open', willOpen);
+        tmBtn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+        return;
+      }
+      /* กระโดดไปบรรทัดที่ใช้ศัพท์นี้ แล้วไฮไลต์ชั่วครู่ */
+      const jump = e.target.closest('.tm-line');
+      if (jump) { gotoSourceLine(jump); return; }
     });
 
     document.addEventListener('keydown', e => {
@@ -411,7 +618,40 @@
         hintIsOpen() ? closeHint() : openHint();
       }
     });
+
+    /* หัวของกล่องศัพท์เป็นปุ่มแต่ใช้ div เพื่อให้จัดวางง่าย
+       จึงต้องรับ Enter/Space เองด้วย ไม่งั้นกดด้วยคีย์บอร์ดไม่ได้ */
+    $('hintBody').addEventListener('keydown', e => {
+      if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+      const h = e.target.closest('.tm-head');
+      if (!h) return;
+      e.preventDefault();
+      h.parentNode.classList.toggle('open');
+    });
+
+    /* คัดลอกโค้ดเฉลยด้วยตัวเองต้องได้ขี้บรรทัดครบ (ดู fixCodeCopy) */
+    document.addEventListener('copy', fixCodeCopy);
   }
+
+  /* เลื่อนไปยังบรรทัดที่ใช้ศัพท์ แล้วไฮไลต์สั้น ๆ ให้เห็นว่าอยู่ตรงไหน
+     ต้องหา pre ที่อยู่ในการ์ดเดียวกับปุ่มที่กด เพราะหน้าเดียวมีหลายการ์ด */
+  function gotoSourceLine(btn){
+    const n = Number(btn.getAttribute('data-goto')) || 0;
+    if (n < 1) return;
+    const sol = btn.closest('.sol');
+    const pre = sol ? sol.querySelector('.sol-code .sol-pre') : null;
+    if (!pre) return;
+    const target = pre.querySelector('.sl[data-n="' + n + '"]');
+    if (!target) return;
+    pre.querySelectorAll('.sl.hit').forEach(x => x.classList.remove('hit'));
+    /* เลื่อนให้บรรทัดนั้นอยู่กลางจอ ไม่ใช่ชนขอบบนหรือขอบล่าง */
+    const want = target.offsetTop - pre.clientHeight / 2 + target.offsetHeight / 2;
+    pre.scrollTop = Math.max(0, want);
+    target.classList.add('hit');
+    clearTimeout(gotoTimer);
+    gotoTimer = setTimeout(() => target.classList.remove('hit'), 2600);
+  }
+  let gotoTimer = 0;
 
   /* ---------------- แผง "ทดลองเอง" — ใส่ input อิสระ ----------------
      หลักการ

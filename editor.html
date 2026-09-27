@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&family=Noto+Sans+Thai:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="js/theme.css?v=61">
+<link rel="stylesheet" href="js/theme.css?v=63">
 <style>
 /* ============ LAYOUT 3 ส่วน ============ */
 .app{position:relative;z-index:1;display:flex;flex-direction:column;height:100vh;overflow:hidden}
@@ -260,8 +260,81 @@
   .sol-code pre{margin:0;padding:11px 12px;background:var(--bg);border:1px solid var(--line);
        border-radius:7px;font:12.2px/1.62 var(--mono,ui-monospace,Consolas,monospace);
        color:var(--fg);overflow-x:auto;white-space:pre;max-height:330px;overflow-y:auto}
+  /* โค้ดถูกแยกเป็น element ต่อบรรทัด เพื่อให้ชี้กลับไปบรรทัดที่ใช้ศัพท์ได้
+     เลขบรรทัดมาจาก CSS counter ไม่ใช่ตัวอักษรในข้อความ
+     ถ้าใส่ตัวเลขลงในข้อความ ปุ่มคัดลอกจะได้ตัวเลขปนไปด้วย
+     ผลข้างเคียงคือข้อความในกล่องไม่มีขี้บรรทัด จึงต้องใส่กลับตอนคัดลอก
+     (ดู codeTextOf และ fixCodeCopy ใน js/app.js)
+     ต้องเป็น block ไม่ใช่ inline-block: ถ้าใช้ inline-block แล้ว
+     บรรทัดจะไม่ซ้อนกันเป็นบรรทัดเดียว ทำให้กล่องโค้ดสูงเท่ากับ 2 บรรทัด */
+  .sol-pre{counter-reset:solline}
+  .sol-pre .sl{display:block;padding-left:34px;position:relative;min-height:1.62em}
+  .sol-pre .sl::before{counter-increment:solline;content:counter(solline);
+       position:absolute;left:0;top:0;width:26px;text-align:right;
+       color:var(--fg3);opacity:.5;font-size:11px;line-height:inherit}
+  .sol-pre .sl.hit{background:color-mix(in srgb,var(--acc) 20%,transparent);
+       box-shadow:inset 2px 0 0 var(--acc)}
   .sol-copy{position:absolute;top:6px;right:6px}
   .sol-note{font-size:11.5px;line-height:1.6;color:var(--fg3);margin-top:6px}
+
+  /* ================= คำศัพท์ประกอบเฉลย =================
+     ทำไมต้องมี: นักเรียนที่เปิดเฉลยแล้วจะสงสัยเสมอว่า "ตรงนี้คืออะไร"
+     คำอธิบายจึงต้องอยู่ใต้เฉลยนั้นเลย ไม่ใช่ไปหาที่อื่น */
+  .tm-wrap,.tm-starter{margin-top:10px;border:1px solid var(--line);
+       border-radius:8px;background:var(--bg);overflow:hidden}
+  .tm-head{display:flex;align-items:center;gap:8px;width:100%;padding:8px 10px;
+       background:none;border:0;color:var(--fg);font:inherit;font-size:12.5px;
+       font-weight:600;cursor:pointer;text-align:left}
+  .tm-head:hover{background:var(--bg2)}
+  .tm-head:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+  .tm-chev{display:flex;width:14px;height:14px;flex:none;color:var(--fg3);
+       transition:transform .16s ease}
+  .tm-chev .chev{width:14px;height:14px}
+  .tm-wrap.open .tm-chev,.tm-starter.open .tm-chev{transform:rotate(90deg)}
+  .tm-hint{margin-left:auto;font-size:11px;font-weight:400;color:var(--fg3)}
+  .tm-list{display:none;padding:0 8px 8px}
+  .tm-wrap.open .tm-list,.tm-starter.open .tm-list{display:block}
+
+  .tm-item,.tm-sitem{border-top:1px solid var(--line)}
+  .tm-item:first-child,.tm-sitem:first-child{border-top:0}
+  .tm-btn,.tm-sbtn{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 8px;
+       width:100%;padding:7px 6px;background:none;border:0;color:var(--fg);
+       font:inherit;font-size:12px;line-height:1.6;text-align:left;cursor:pointer;
+       border-radius:6px}
+  .tm-btn:hover,.tm-sbtn:hover{background:var(--bg2)}
+  .tm-btn:focus-visible,.tm-sbtn:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+  .tm-nm{font:600 12px/1.5 var(--mono,ui-monospace,Consolas,monospace);
+       color:var(--acc);white-space:nowrap}
+  .tm-kind{font-size:10px;color:var(--fg3);border:1px solid var(--line);
+       border-radius:99px;padding:0 6px;white-space:nowrap}
+  .tm-w{flex:1;min-width:100%;font-size:11.8px;color:var(--fg2);line-height:1.6}
+  .tm-btn .chev{width:13px;height:13px;flex:none;color:var(--fg3);align-self:center;
+       transition:transform .16s ease}
+  .tm-item.open .tm-btn .chev,.tm-sitem.open .tm-sbtn .chev{transform:rotate(90deg)}
+
+  .tm-body,.tm-sbody{display:none;padding:2px 6px 11px}
+  .tm-item.open .tm-body,.tm-sitem.open .tm-sbody{display:block}
+  .tm-sbody{font-size:12px;line-height:1.75;color:var(--fg2)}
+  .tm-dl{margin:0}
+  .tm-dl dt{font-size:11px;font-weight:700;color:var(--fg3);margin:7px 0 1px}
+  .tm-dl dd{margin:0;font-size:12.2px;line-height:1.75;color:var(--fg2)}
+  .tm-dt-note{color:var(--acc2)}
+  .tm-dd-note{color:var(--fg2)}
+  .tm-eg{margin-top:8px}
+  .tm-eg pre{margin:0;padding:8px 10px;background:var(--bg2);border:1px solid var(--line);
+       border-radius:6px;max-height:none;overflow-x:auto}
+  .tm-eg .sl{display:block;padding-left:0;min-height:0}
+  .tm-eg .sl::before{content:none;counter-increment:none}
+  .tm-eg .sl:hover{background:none}
+  .tm-gotcha{margin-top:8px;padding:7px 9px;border-radius:0 6px 6px 0;
+       background:color-mix(in srgb,var(--warn) 12%,transparent);
+       border-left:2px solid var(--warn);font-size:11.8px;line-height:1.7;color:var(--fg2)}
+  .tm-gotcha b{display:block;font-size:10.5px;color:var(--warn);margin-bottom:2px}
+  .tm-src{margin-top:8px;font-size:11.5px;color:var(--fg3);display:flex;
+       align-items:center;flex-wrap:wrap;gap:5px}
+  .tm-line{font:inherit;font-size:11px;padding:2px 8px;border-radius:99px;
+       border:1px solid var(--line);background:var(--bg);color:var(--acc);cursor:pointer}
+  .tm-line:hover{background:var(--acc);color:var(--bg);border-color:var(--acc)}
 
   /* ================= แผง "ทดลองเอง" (ใส่ input อิสระ) =================
      หน้าตาเหมือนแผงคำใบ้ เพื่อให้รู้ว่าเป็นส่วนเสริมของหน้าเดียวกัน
@@ -587,9 +660,9 @@
   </div>
 </aside>
 
-<script src="problems/problems.js?v=61"></script>
-<script src="js/interpreter.js?v=61"></script>
-<script src="js/editor.js?v=61"></script>
-<script src="js/app.js?v=61"></script>
+<script src="problems/problems.js?v=63"></script>
+<script src="js/interpreter.js?v=63"></script>
+<script src="js/editor.js?v=63"></script>
+<script src="js/app.js?v=63"></script>
 </body>
 </html>
