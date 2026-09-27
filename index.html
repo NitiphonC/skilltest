@@ -1,0 +1,260 @@
+﻿<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Code Practice — JavaScript</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0b0e14; --bg2:#11151c; --card:#151a23; --card2:#1b212c;
+  --line:#232b38; --line2:#2f3949;
+  --fg:#e6edf3; --fg2:#9aa7b8; --fg3:#6b7789;
+  --acc:#4c9aff; --acc2:#00d4ff; --ok:#3fb950; --err:#f85149; --warn:#e3b341;
+  --mono:'JetBrains Mono','Noto Sans Thai',ui-monospace,Consolas,monospace;
+  --sans:'Inter','Noto Sans Thai',system-ui,-apple-system,sans-serif;
+  --r:12px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  font-family:var(--sans); background:var(--bg); color:var(--fg);
+  min-height:100vh; -webkit-font-smoothing:antialiased;
+}
+body::before{
+  content:''; position:fixed; inset:0; pointer-events:none; z-index:0;
+  background:
+    radial-gradient(900px 500px at 15% -10%, rgba(76,154,255,.13), transparent 60%),
+    radial-gradient(800px 450px at 95% 0%, rgba(0,212,255,.09), transparent 60%);
+}
+
+/* ---------- NAVBAR ---------- */
+.nav{
+  position:sticky; top:0; z-index:50;
+  display:flex; align-items:center; gap:16px;
+  padding:0 24px; height:60px;
+  background:rgba(11,14,20,.75);
+  backdrop-filter:blur(14px) saturate(140%);
+  border-bottom:1px solid var(--line);
+}
+.brand{display:flex;align-items:center;gap:11px;text-decoration:none;color:inherit}
+.brand-mark{
+  width:34px;height:34px;flex:none;display:grid;place-items:center;
+  border-radius:10px; color:#06090f;
+  background:linear-gradient(135deg,var(--acc) 0%,var(--acc2) 100%);
+  box-shadow:0 4px 16px rgba(76,154,255,.35);
+}
+.brand-mark svg{width:19px;height:19px}
+.brand-txt{font-family:var(--mono);font-weight:700;font-size:15px;letter-spacing:-.2px}
+.brand-txt b{color:var(--acc);font-weight:700}
+.nav-tag{
+  font-family:var(--mono);font-size:11px;color:var(--fg3);
+  border:1px solid var(--line2);border-radius:999px;padding:3px 10px;
+}
+.nav-sp{flex:1}
+.nav-stat{font-family:var(--mono);font-size:12px;color:var(--fg2)}
+.nav-stat b{color:var(--ok)}
+
+/* ---------- LAYOUT ---------- */
+.wrap{position:relative;z-index:1;max-width:1180px;margin:0 auto;padding:40px 24px 72px}
+.hero{margin-bottom:34px}
+.hero h1{font-size:clamp(26px,4vw,36px);font-weight:700;letter-spacing:-.8px;margin-bottom:10px}
+.hero h1 span{background:linear-gradient(90deg,var(--acc),var(--acc2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.hero p{color:var(--fg2);font-size:15px;line-height:1.75;max-width:660px}
+
+/* code preview */
+.prev{
+  margin-top:20px;border:1px solid var(--line);border-radius:var(--r);
+  background:var(--bg2);overflow:hidden;
+}
+.prev-bar{
+  display:flex;align-items:center;gap:7px;padding:9px 14px;
+  border-bottom:1px solid var(--line);background:var(--card);
+}
+.dot{width:10px;height:10px;border-radius:50%}
+.prev-bar span{margin-left:8px;font-family:var(--mono);font-size:11.5px;color:var(--fg3)}
+.prev pre{
+  margin:0;padding:16px 18px;overflow-x:auto;
+  font-family:var(--mono);font-size:12.5px;line-height:1.85;
+}
+.k{color:#c792ea}.s{color:#a6e3a1}.c{color:var(--fg3);font-style:italic}.f{color:#82aaff}.n{color:#f78c6c}
+
+/* ---------- PROBLEM GRID ---------- */
+.sec-head{display:flex;align-items:baseline;gap:12px;margin:38px 0 16px}
+.sec-head h2{font-size:17px;font-weight:600;letter-spacing:-.2px}
+.sec-head small{font-family:var(--mono);font-size:12px;color:var(--fg3)}
+.sec-head .draft-note{font-size:12.5px;color:var(--acc)}
+.sec-head .draft-note:empty{display:none}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
+
+.pcard{
+  position:relative;display:flex;flex-direction:column;gap:12px;
+  padding:20px;border-radius:var(--r);
+  background:var(--card);border:1px solid var(--line);
+  cursor:pointer;text-decoration:none;color:inherit;
+  transition:transform .18s cubic-bezier(.2,.7,.3,1),border-color .18s,box-shadow .18s,background .18s;
+}
+.pcard::after{
+  content:'';position:absolute;inset:0;border-radius:var(--r);pointer-events:none;
+  background:linear-gradient(135deg,rgba(76,154,255,.09),transparent 55%);
+  opacity:0;transition:opacity .18s;
+}
+.pcard:hover{transform:translateY(-3px);border-color:var(--acc);box-shadow:0 14px 34px rgba(0,0,0,.5),0 0 0 1px rgba(76,154,255,.25)}
+.pcard:hover::after{opacity:1}
+.pcard.done{border-color:rgba(63,185,80,.4)}
+.pcard.done:hover{border-color:var(--ok);box-shadow:0 14px 34px rgba(0,0,0,.5),0 0 0 1px rgba(63,185,80,.3)}
+
+.pc-top{display:flex;align-items:flex-start;gap:12px}
+.pc-num{
+  flex:none;width:34px;height:34px;display:grid;place-items:center;
+  font-family:var(--mono);font-size:13px;font-weight:700;
+  border-radius:9px;background:var(--card2);border:1px solid var(--line2);color:var(--acc);
+}
+.pcard.done .pc-num{background:rgba(63,185,80,.14);border-color:rgba(63,185,80,.4);color:var(--ok)}
+.pc-tt{flex:1;min-width:0}
+.pc-tt h3{font-size:15.5px;font-weight:600;letter-spacing:-.2px;margin-bottom:2px}
+.pc-tt small{display:block;font-family:var(--mono);font-size:11.5px;color:var(--fg3)}
+.pc-desc{font-size:13px;line-height:1.7;color:var(--fg2);flex:1;
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.pc-foot{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.chip{
+  font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.3px;
+  padding:3px 9px;border-radius:999px;text-transform:uppercase;
+}
+.chip.easy{background:rgba(63,185,80,.14);color:var(--ok)}
+.chip.medium{background:rgba(227,179,65,.14);color:var(--warn)}
+.chip.hard{background:rgba(248,81,73,.14);color:var(--err)}
+.chip.score{background:var(--card2);color:var(--fg3);border:1px solid var(--line2)}
+.chip.draft{background:rgba(76,154,255,.14);color:var(--acc);border:1px solid rgba(76,154,255,.3)}
+.chip.draft:empty{display:none}
+.pc-go{margin-left:auto;display:flex;align-items:center;gap:5px;
+  font-family:var(--mono);font-size:12px;color:var(--acc);opacity:0;transform:translateX(-5px);transition:.18s}
+.pcard:hover .pc-go{opacity:1;transform:translateX(0)}
+.pc-go svg{width:14px;height:14px}
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <a href="index.html" class="brand">
+    <div class="brand-mark">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 18l-6-6 6-6"/><path d="M15 6l6 6-6 6"/>
+      </svg>
+    </div>
+    <div class="brand-txt">Code<b>Practice</b></div>
+  </a>
+  <span class="nav-tag">JavaScript</span>
+  <div class="nav-sp"></div>
+  <div class="nav-stat">ผ่านแล้ว <b id="doneCount">0</b>/8</div>
+</nav>
+
+<div class="wrap">
+  <section class="hero">
+    <h1>ฝึกเขียนโค้ด <span>8 โจทย์</span> แบบ HackerRank</h1>
+    <p>ระบบจะป้อน Test Case เข้าโค้ดของคุณโดยอัตโนมัติ แล้วตรวจผลจาก <code style="font-family:var(--mono);color:var(--acc2)">console.log</code> ที่คุณสั่งพิมพ์ออกมา</p>
+
+    <div class="prev">
+      <div class="prev-bar">
+        <div class="dot" style="background:#ff5f57"></div>
+        <div class="dot" style="background:#febc2e"></div>
+        <div class="dot" style="background:#28c840"></div>
+        <span>solution.js — โค้ดเริ่มต้นที่คุณจะได้รับ</span>
+      </div>
+<pre><span class="c">// โค้ดเริ่มต้นอัตโนมัติ — ชื่อตัวแปรต่างกันตามโจทย์</span>
+<span class="k">const</span> fs = <span class="f">require</span>(<span class="s">'fs'</span>);
+<span class="k">const</span> rawInput = fs.<span class="f">readFileSync</span>(<span class="n">0</span>, <span class="s">'utf-8'</span>).<span class="f">trim</span>();
+
+<span class="c">// แปลงสตริงให้กลายเป็น Array ด้วย JSON.parse</span>
+<span class="k">const</span> birds = <span class="f">JSON.parse</span>(rawInput);
+
+<span class="c">// CODE HERE</span></pre>
+    </div>
+  </section>
+
+  <div class="sec-head">
+    <h2>รายการโจทย์</h2>
+    <span class="draft-note" id="draftCount"></span>
+    <small id="gridCount">8 problems</small>
+  </div>
+  <div class="grid" id="grid"></div>
+</div>
+
+<script src="problems/problems.js?v=17"></script>
+<script>
+const KEY = 'cp_progress_v1';
+const DRAFT_KEY = 'cp_draft_v1';
+const readDone = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch(e){ return {}; } };
+const readDrafts = () => { try { return JSON.parse(localStorage.getItem(DRAFT_KEY)) || {}; } catch(e){ return {}; } };
+
+/* เวลาแบบสั้น ๆ: "เมื่อสักครู่" / "3 ชั่วโมงที่แล้ว" / "เมื่อวาน"
+   คืน '' ถ้าเวลาไม่สมเหตุสมผล (ข้อมูลเสีย หรือนาฬิกาเพี้ยน) */
+function ago(ts){
+  if (!ts || typeof ts !== 'number' || !isFinite(ts)) return '';
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 0) return '';                       // เวลาอนาคต = นาฬิกาเพี้ยน
+  if (s < 60) return 'เมื่อสักครู่';
+  if (s < 3600) return Math.floor(s / 60) + ' นาทีที่แล้ว';
+  if (s < 86400) return Math.floor(s / 3600) + ' ชั่วโมงที่แล้ว';
+  if (s < 172800) return 'เมื่อวาน';
+  if (s < 2592000) return Math.floor(s / 86400) + ' วันที่แล้ว';
+  return '';                                  // เกินเดือน ไม่ต้องบอก
+}
+function draftLabel(dr){
+  const a = ago(dr.at);
+  return a ? 'มีงานค้าง · ' + a : 'มีงานค้าง';
+}
+function draftTitle(dr){
+  const d = new Date(dr.at);
+  return (dr.at && isFinite(dr.at) && d.getFullYear() > 2000)
+    ? 'บันทึกไว้เมื่อ ' + d.toLocaleString()
+    : 'มีโค้ดที่บันทึกไว้ในเครื่องนี้';
+}
+
+function render(){
+  const done = readDone();
+  const drafts = readDrafts();
+  const grid = document.getElementById('grid');
+  let html = '', n = 0, d = 0, w = 0;
+
+  for(const id in PROBLEMS){
+    const p = PROBLEMS[id];
+    n++;
+    const isDone = !!done[id];
+    if(isDone) d++;
+    const dr = drafts[id];
+    const hasDraft = !!(dr && typeof dr.code === 'string' && dr.code.trim());
+    if(hasDraft) w++;
+
+    html += `
+    <a class="pcard${isDone?' done':''}" href="editor.html?id=${id}">
+      <div class="pc-top">
+        <div class="pc-num">${n}</div>
+        <div class="pc-tt">
+          <h3>${p.title}</h3>
+          <small>${p.subtitle}</small>
+        </div>
+      </div>
+      <div class="pc-desc">${p.desc}</div>
+      <div class="pc-foot">
+        <span class="chip ${p.difficulty}">${p.difficulty}</span>
+        <span class="chip score">${p.score} คะแนน</span>
+        ${hasDraft?`<span class="chip draft" title="${draftTitle(dr)}">${draftLabel(dr)}</span>`:''}
+        <span class="pc-go">ทำโจทย์
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </span>
+      </div>
+    </a>`;
+  }
+
+  grid.innerHTML = html;
+  document.getElementById('doneCount').textContent = d;
+  document.getElementById('gridCount').textContent = n + ' problems';
+  const dw = document.getElementById('draftCount');
+  if (dw) dw.textContent = w ? w + ' โจทย์มีงานค้างไว้' : '';
+}
+render();
+</script>
+</body>
+</html>

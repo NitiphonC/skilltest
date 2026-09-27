@@ -1,0 +1,286 @@
+﻿<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Code Practice — Editor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&family=Noto+Sans+Thai:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="js/theme.css?v=17">
+<style>
+/* ============ LAYOUT 3 ส่วน ============ */
+.app{position:relative;z-index:1;display:flex;flex-direction:column;height:100vh;overflow:hidden}
+.body{flex:1;display:flex;min-height:0}
+.side{
+  width:360px;flex:none;display:flex;flex-direction:column;
+  background:var(--bg2);border-right:1px solid var(--line);
+  transition:width .2s cubic-bezier(.2,.7,.3,1);
+}
+.side.hide{width:0;border-right-color:transparent}
+.side-in{width:360px;height:100%;overflow-y:auto;padding:20px 20px 40px}
+.side h1{font-size:18px;font-weight:700;letter-spacing:-.3px;margin-bottom:3px}
+.side .sub{font-family:var(--mono);font-size:11.5px;color:var(--fg3);margin-bottom:13px}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
+.chip{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.3px;padding:3px 9px;border-radius:999px;text-transform:uppercase}
+.chip.easy{background:rgba(63,185,80,.14);color:var(--ok)}
+.chip.medium{background:rgba(227,179,65,.14);color:var(--warn)}
+.chip.hard{background:rgba(248,81,73,.14);color:var(--err)}
+.chip.score{background:var(--card);color:var(--fg3);border:1px solid var(--line2)}
+.side .desc{font-size:13.5px;line-height:1.85;color:var(--fg2);margin-bottom:16px}
+.blk{margin-bottom:14px}
+.blk-t{display:flex;align-items:center;gap:6px;margin-bottom:6px;font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.7px;text-transform:uppercase;color:var(--fg3)}
+.blk-t svg{width:12px;height:12px}
+.blk-t.in svg{color:var(--acc2)} .blk-t.out svg{color:var(--ok)}
+.blk pre{font-family:var(--mono);font-size:11.5px;line-height:1.8;white-space:pre-wrap;word-break:break-word;background:var(--bg);border:1px solid var(--line);border-left:3px solid var(--acc);border-radius:8px;padding:10px 12px;color:#a5d6ff}
+.blk.out pre{border-left-color:var(--ok);color:#7ee787}
+.hint{margin-top:8px;padding:9px 11px;border-radius:8px;background:rgba(0,212,255,.07);border:1px solid rgba(0,212,255,.2);font-size:12px;line-height:1.8;color:var(--fg2)}
+.hint code{font-family:var(--mono);font-size:11px;color:var(--acc2);background:rgba(0,212,255,.1);padding:1px 4px;border-radius:4px}
+.ex{margin-bottom:8px}
+.ex-head{font-family:var(--mono);font-size:10px;color:var(--fg3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px}
+
+.right{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
+.edbar{
+  flex:none;display:flex;align-items:center;gap:8px;height:38px;padding:0 14px;
+  background:var(--card);border-bottom:1px solid var(--line);
+}
+.tab{display:flex;align-items:center;gap:7px;height:38px;padding:0 14px;font-family:var(--mono);font-size:12.5px;background:var(--bg);border:1px solid var(--line);border-bottom:none;border-radius:8px 8px 0 0;margin-bottom:-1px}
+.tab .dot{width:7px;height:7px;border-radius:50%;background:var(--warn)}
+/* ป้ายสถานะการบันทึกอัตโนมัติ */
+#saveTag{font-size:11px;color:var(--fg3);display:flex;align-items:center;gap:5px;white-space:nowrap}
+#saveTag:empty{display:none}
+#saveTag.ok{color:var(--ok,#3fb950)}
+#saveTag.saving{color:var(--fg3)}
+#saveTag.ok::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}
+.ed{flex:1;min-height:0;display:flex}
+
+/* ---- bottom 2 ส่วน ---- */
+.bottom{flex:none;display:flex;height:250px;min-height:34px;border-top:1px solid var(--line)}
+.bottom .panel{width:50%;border-right:1px solid var(--line)}
+.bottom .panel:last-child{border-right:none}
+.grip{flex:none;height:7px;cursor:ns-resize;position:relative}
+.grip::after{content:'';position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:44px;height:3px;border-radius:3px;background:var(--line2)}
+.grip:hover::after{background:var(--acc)}
+
+/* RAW OUTPUT — ไม่มี UI ตกแต่ง */
+.raw{
+  flex:1;min-height:0;overflow:auto;padding:12px 14px;
+  font-family:var(--mono);font-size:13px;line-height:1.7;
+  white-space:pre-wrap;word-break:break-word;color:#c9d1d9;background:#080b11;
+}
+.raw .errline{color:var(--err)}
+.raw .dimline{color:var(--fg3)}
+.raw .cursor{display:inline-block;width:8px;height:15px;background:var(--acc2);vertical-align:-2px;animation:blink 1s steps(2) infinite}
+@keyframes blink{50%{opacity:0}}
+
+/* test case list */
+.tcs{padding:8px 10px;display:flex;flex-direction:column;gap:6px}
+.tc{border:1px solid var(--line);border-radius:9px;background:var(--bg);overflow:hidden}
+.tc-h{display:flex;align-items:center;gap:8px;padding:7px 10px;cursor:pointer}
+.tc-h:hover{background:var(--card)}
+.tc-n{font-family:var(--mono);font-size:11.5px;color:var(--acc);font-weight:600}
+.tc-s{margin-left:auto;font-family:var(--mono);font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px;letter-spacing:.4px}
+.tc-s.ok{background:rgba(63,185,80,.15);color:var(--ok)}
+.tc-s.no{background:rgba(248,81,73,.15);color:var(--err)}
+.tc-b{display:none;padding:0 10px 10px;font-family:var(--mono);font-size:11.5px;line-height:1.8;color:var(--fg2)}
+.tc.open .tc-b{display:block}
+.tc-b b{color:var(--fg3);font-weight:400}
+.tc-b .g{color:var(--ok)} .tc-b .r{color:var(--err)}
+.sum{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:11.5px;padding:2px 2px 6px}
+.sum .ok{color:var(--ok);font-weight:700} .sum .no{color:var(--err);font-weight:700} .sum .dim{color:var(--fg3)}
+
+/* debug area */
+.dbgwrap{flex:none;display:none;flex-direction:column;border-top:2px solid var(--pur);background:var(--bg2)}
+.dbgwrap.on{display:flex}
+.dbgbar{flex:none;display:flex;align-items:center;gap:7px;flex-wrap:wrap;height:46px;padding:0 12px;background:var(--card);border-bottom:1px solid var(--line)}
+.dbgcols{flex:1;min-height:0;display:flex}
+.dbgcols .panel{width:33.333%;border-right:1px solid var(--line)}
+.dbgcols .panel:last-child{border-right:none}
+@media (max-width:1000px){
+  /* จอแคบ: ย่อแผงล่างให้สั้นลง เพื่อให้พื้นที่เขียนโค้ดได้มากที่สุด */
+  .bottom{flex-direction:column;height:auto}
+  .bottom .panel{width:100%;height:128px;flex:none;border-right:none;border-bottom:1px solid var(--line)}
+  .ed{min-height:180px}
+  /* จอแคบ: sidebar เป็น panel เลื่อนเข้ามา ไม่ทับตัวโค้ด
+     ซ่อนไว้ตั้งแต่ CSS ไม่ต้องรอ JS -> ไม่มีอาการกะพริบทับโค้ด */
+  .side{position:fixed;top:var(--navH);left:0;bottom:0;width:min(86vw,360px);z-index:30;
+       transform:translateX(-100%);box-shadow:0 0 50px rgba(0,0,0,.7);
+       transition:transform .2s cubic-bezier(.2,.7,.3,1)}
+  .side.open{transform:translateX(0)}
+  .side-in{width:100%}
+  .sidebg{display:none}
+  .sidebg.on{display:block;position:fixed;left:0;top:0;right:0;bottom:0;
+       background:rgba(0,0,0,.5);z-index:25}
+  .nav .pill{display:none}
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ================= NAVBAR ================= -->
+  <nav class="nav">
+    <a href="index.html" class="brand" title="กลับหน้าแรก">
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l-6-6 6-6"/><path d="M15 6l6 6-6 6"/></svg>
+      </div>
+      <div class="brand-txt">Code<b>Practice</b></div>
+    </a>
+    <div class="nav-div"></div>
+    <div class="pill">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+      <b id="probName">—</b>
+    </div>
+    <div class="nav-sp"></div>
+    <button class="btn icon" id="btnSide" title="ซ่อน/แสดงโจทย์ (Ctrl+B)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg>
+    </button>
+    <button class="btn icon" id="btnExport" title="บันทึกงานทั้งหมดเป็นไฟล์ .json (เก็บไว้นอกเบราว์เซอร์ได้)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+    </button>
+    <button class="btn icon" id="btnImport" title="นำเข้างานที่บันทึกไว้จากไฟล์ .json">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 8l5-5 5 5"/><path d="M12 3v12"/></svg>
+    </button>
+    <button class="btn" id="btnReset" title="คืนค่าโค้ดเริ่มต้น">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L3 8"/></svg>
+      รีเซ็ต
+    </button>
+    <button class="btn go" id="btnRun" title="รันตัวอย่างเดียว (Ctrl+Enter)">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 3.5v17l15-8.5z"/></svg>
+      Run Sample
+    </button>
+    <button class="btn send" id="btnSubmit" title="ตรวจทุก Test Case (Ctrl+Shift+Enter)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+      Submit
+    </button>
+    <button class="btn dbg" id="btnDebug" title="เดินทีละบรรทัด (F5)">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 4l10 8-10 8z"/><rect x="17" y="4" width="3" height="16" rx="1"/></svg>
+      Debug
+    </button>
+  </nav>
+
+  <!-- ================= BODY ================= -->
+  <div class="body">
+
+    <!-- ฉากมืดหลัง sidebar (จอแคบ) — ต้องอยู่นอก .side เพราะ .side มี transform
+         ซึ่งจะกลายเป็น containing block ของ position:fixed ทำให้คลุมได้แค่กรอบ sidebar -->
+    <div class="sidebg" id="sidebg"></div>
+
+    <!-- โจทย์ -->
+    <aside class="side" id="side">
+      <div class="side-in">
+        <h1 id="pTitle">—</h1>
+        <div class="sub" id="pSub">—</div>
+        <div class="chips">
+          <span class="chip easy" id="pDiff">—</span>
+          <span class="chip score" id="pScore">—</span>
+        </div>
+        <p class="desc" id="pDesc"></p>
+
+        <div class="blk">
+          <div class="blk-t in">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M12 15l-4-4M12 15l4-4M3 17v2a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-2"/></svg>
+            Input
+          </div>
+          <pre id="pInput">—</pre>
+          <div class="hint">ตัวแปรที่รับค่าอินพุต: <code id="varName">data</code></div>
+        </div>
+
+        <div class="blk out">
+          <div class="blk-t out">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21V9M12 9L8 13M12 9l4 4M3 7V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2"/></svg>
+            Output
+          </div>
+          <pre id="pOutput">—</pre>
+          <div class="hint">พิมพ์คำตอบออกมาด้วย <code>console.log(...)</code><br>ถ้าคำตอบเป็น Array ใช้ <code>console.log(JSON.stringify(ans))</code></div>
+        </div>
+
+        <div class="blk">
+          <div class="blk-t">ตัวอย่าง</div>
+          <div id="pExamples"></div>
+        </div>
+      </div>
+    </aside>
+
+    <div class="right">
+      <!-- โค้ด -->
+      <div class="edbar">
+        <div class="tab"><div class="dot"></div>solution.js</div>
+        <span class="grow"></span>
+        <span class="tag" id="saveTag" title=""></span>
+      </div>
+      <div class="ed"><div id="code" style="flex:1;min-width:0"></div></div>
+
+      <!-- ===== ล่างซ้าย: Run Sample (ดิบ) ===== -->
+      <div class="bottom" id="bottom">
+        <div class="panel">
+          <div class="grip" id="grip"></div>
+          <div class="phead">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-6-6-6M12 19h8"/></svg>
+            Run Sample
+            <span class="grow"></span>
+            <span class="tag" id="runTag"></span>
+            <button class="btn sm" id="btnClearRaw" title="ล้างหน้าจอ">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+            </button>
+          </div>
+          <div class="raw" id="rawOut"></div>
+        </div>
+
+        <!-- ===== ล่างขวา: Submit ===== -->
+        <div class="panel">
+          <div class="phead">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+            Submit
+            <span class="grow"></span>
+            <span class="tag" id="subTag"></span>
+          </div>
+          <div class="pbody" id="subBody"></div>
+        </div>
+      </div>
+
+      <!-- ===== DEBUG ===== -->
+      <div class="dbgwrap" id="dbgWrap">
+        <div class="dbgbar">
+          <button class="btn sm go" id="dbgStart">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 3.5v17l15-8.5z"/></svg>เริ่ม
+          </button>
+          <button class="btn sm" id="dbgStep" disabled>
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 4l10 8-10 8z"/><rect x="16" y="4" width="3" height="16" rx="1"/></svg>สเต็ป
+          </button>
+          <button class="btn sm" id="dbgGo" disabled>
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 4l9 8-9 8z"/><path d="M14 4l7 8-7 8z"/></svg>ไปต่อจนจบ
+          </button>
+          <button class="btn sm" id="dbgStop" disabled>
+            <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>หยุด
+          </button>
+          <div class="dbgrow"></div>
+          <div class="dbgstat">บรรทัด <b id="dbgLine">—</b></div>
+          <div class="dbgstat">สเต็ป <b id="dbgStepN">0</b></div>
+        </div>
+        <div class="dbgcols">
+          <div class="panel">
+            <div class="phead"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-6-6-6M12 19h8"/></svg>Output</div>
+            <div class="raw" id="dbgOut"><span class="dimline">กด "เริ่ม" เพื่อเดินโค้ด</span></div>
+          </div>
+          <div class="panel">
+            <div class="phead"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>ตัวแปร</div>
+            <div class="pbody"><div class="vlist" id="dbgVars"></div></div>
+          </div>
+          <div class="panel">
+            <div class="phead"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3 7h7l-5.5 4.5L18 21l-6-4-6 4 1.5-7.5L2 9h7z"/></svg>Call stack</div>
+            <div class="pbody"><div class="stack" id="dbgStack"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="fileImport" accept="application/json,.json" class="vh">
+<script src="problems/problems.js?v=17"></script>
+<script src="js/interpreter.js?v=17"></script>
+<script src="js/editor.js?v=17"></script>
+<script src="js/app.js?v=17"></script>
+</body>
+</html>
