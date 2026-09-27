@@ -704,7 +704,12 @@
 
   function init() {
     paintSidebar();
-    ed = new CodeEditor($('code'), {});
+    /* ส่งรูปร่างอินพุตจริงของโจทย์เข้าไป ให้ตัวช่วยพิมพ์รู้ว่า
+       ตัวแปรที่รับค่าเป็น Array หรือ Object (JSON.parse ให้ได้ทั้งสองแบบ) */
+    ed = new CodeEditor($('code'), {
+      inputName: P.inputName || 'data',
+      shape: P.testCases && P.testCases[0] ? P.testCases[0].input : undefined
+    });
 
     /* คืนงานที่ค้างไว้จากครั้งก่อน (ถ้ามี) */
     const draft = getDraft(P.id);

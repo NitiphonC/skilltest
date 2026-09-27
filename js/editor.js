@@ -86,8 +86,33 @@
     'reduce': 'arr.reduce((acc, ${1:x}) => {\n\t${2}\n\treturn acc;\n}, ${3:init});',
     'sortarr': 'arr.sort((${1:a}, ${2:b}) => ${3:a - b});',
     'arr': 'const ${1:name} = [${2}];',
-    'obj': 'const ${1:name} = {\n\t${2:key}: ${3:value}\n};'
+    'obj': 'const ${1:name} = {\n\t${2:key}: ${3:value}\n};',
+
+    /* operator ที่นักเรียนใช้บ่อย — พิมพ์ชื่อย่อแล้วได้โครงเต็ม
+       ชื่อย่อเลือกให้สั้นที่สุดที่ยังอ่านออก ไม่งั้นจะแย่งกับ keyword อื่น */
+    'tern': '${1:cond} ? ${2:yes} : ${3:no}',
+    'ternary': '${1:cond} ? ${2:yes} : ${3:no}',
+    'and': 'x ${1:value} > 0 && y ${2:value} > 0',
+    'or': 'x ${1:value} > 0 || y ${2:value} > 0',
+    'not': '!${1:cond}',
+    'eq': '${1:a} === ${2:b}',
+    'neq': '${1:a} !== ${2:b}',
+    'gte': '${1:a} >= ${2:b}',
+    'lte': '${1:a} <= ${2:b}',
+    'inc': '${1:i}++',
+    'dec': '${1:i}--',
+    'mod': '${1:a} % ${2:b}',
+
+    /* รูปแบบที่เจอบ่อยในการหาค่ามากสุด/น้อยสุด นักเรียนมักเขียนเองยาว ๆ */
+    'maxof': 'let best = ${1:-1};\nfor (let i = 0; i < ${2:arr}.length; i++) {\n\tif (${2:arr}[i] > best) best = ${2:arr}[i];\n}',
+    'mino': 'let low = ${1:Infinity};\nfor (let i = 0; i < ${2:arr}.length; i++) {\n\tif (${2:arr}[i] < low) low = ${2:arr}[i];\n}',
+    'sum': 'let total = 0;\nfor (let i = 0; i < ${1:arr}.length; i++) {\n\ttotal += ${1:arr}[i];\n}',
+    'pairloop': 'for (let i = 0; i < ${1:a}.length; i++) {\n\tfor (let j = 0; j < ${2:b}.length; j++) {\n\t\t${0}\n\t}\n}'
   };
+
+  /* สมาชิกที่พิมพ์ต่อท้องไปบ่อยที่สุด ต้องอยู่บนสุดเสมอ
+     ไม่งั้นจะโดนตัดตอนแสดง 12 รายการ เพราะเรียงตามความยาวชื่อ */
+  const TOP_MEMBERS = new Set(['length', 'push', 'size', 'get', 'set', 'add', 'has', 'keys', 'values']);
 
   /* ตัวเปิด -> ตัวปิดที่ต้องใส่ให้อัตโนมัติ
      สำคัญ: กดอัตโนมัติได้เฉพาะตัวเปิด ถ้ากดตัวปิดต้อง "ข้ามผ่าน" ไม่ใช่เพิ่มคู่ใหม่ */
@@ -786,6 +811,140 @@
       return stack;
     }
 
+    /* หาตำแหน่งวงเล็บปีกกาที่ครอบตำแหน่งที่กำหนด
+       คืนค่า { open, close } ของบล็อกที่อยู่ชั้นในสุด
+       srcBefore = ข้อความถึง caret (ใช้เดินหลังหา { ที่ยังไม่ปิด)
+       whole     = ข้อความทั้งไฟล์ (ต้องใช้ตอนเดินหน้าหา } ปิด
+                   เพราะ } ปิดมักอยู่เลย caret) */
+    _enclosingBlock(srcBefore, pos, whole){
+      const src = srcBefore;
+      const stack = [];
+      let i = 0;
+      const n = src.length;
+      const stop = Math.min(pos, n);
+      while (i < stop){
+        const c = src[i];
+        if (c === '/' && src[i + 1] === '/'){ const e = src.indexOf('\n', i); i = (e === -1 || e > stop) ? stop : e; continue; }
+        if (c === '/' && src[i + 1] === '*'){ const e = src.indexOf('*/', i + 2); i = (e === -1 || e + 2 > stop) ? stop : e + 2; continue; }
+        if (c === '"' || c === "'" || c === '`'){
+          const q = c; i++;
+          while (i < stop){
+            if (src[i] === '\\'){ i += 2; continue; }
+            if (src[i] === q){ i++; break; }
+            i++;
+          }
+          continue;
+        }
+        if (c === '{') stack.push(i);
+        else if (c === '}') stack.pop();
+        i++;
+      }
+      if (!stack.length) return null;
+      const open = stack[stack.length - 1];
+      /* เดินหน้าหาวงเล็บปิดที่ตรงกัน — ต้องดูข้อความทั้งไฟล์ ไม่ใช่ส่วนที่ตัดแล้ว */
+      const w = (whole === undefined || whole === null) ? src : whole;
+      let d = 0, j = open, close = -1;
+      while (j < w.length){
+        const c = w[j];
+        if (c === '/' && w[j + 1] === '/'){ const e = w.indexOf('\n', j); j = (e === -1) ? w.length : e; continue; }
+        if (c === '/' && w[j + 1] === '*'){ const e = w.indexOf('*/', j + 2); j = (e === -1) ? w.length : e + 2; continue; }
+        if (c === '"' || c === "'" || c === '`'){
+          const q = c; j++;
+          while (j < w.length){
+            if (w[j] === '\\'){ j += 2; continue; }
+            if (w[j] === q){ j++; break; }
+            j++;
+          }
+          continue;
+        }
+        if (c === '{') d++;
+        else if (c === '}'){ d--; if (d === 0){ close = j; break; } }
+        j++;
+      }
+      return { open, close };
+    }
+
+    /* หาวงเล็บวงกลมที่ยังไม่ปิด ณ ตำแหน่งที่กำหนด (ข้ามสตริงกับคอมเมนต์) */
+    _openParens(src, stop){
+      const stack = [];
+      let i = 0;
+      const n = Math.min(stop === undefined ? src.length : stop, src.length);
+      while (i < n){
+        const c = src[i];
+        if (c === '/' && src[i + 1] === '/'){ const e = src.indexOf('\n', i); i = (e === -1 || e > n) ? n : e; continue; }
+        if (c === '/' && src[i + 1] === '*'){ const e = src.indexOf('*/', i + 2); i = (e === -1 || e + 2 > n) ? n : e + 2; continue; }
+        if (c === '"' || c === "'" || c === '`'){
+          const q = c; i++;
+          while (i < n){
+            if (src[i] === '\\'){ i += 2; continue; }
+            if (src[i] === q){ i++; break; }
+            i++;
+          }
+          continue;
+        }
+        if (c === '(') stack.push(i);
+        else if (c === ')') stack.pop();
+        i++;
+      }
+      return stack;
+    }
+
+    /* ตัวแปรที่ประกาศในหัว for/while มีขอบเขตเฉพาะ body ของลูป
+       for (let i = 0; ...) -> i ใช้ได้แค่ในปีกกาที่ตามมา
+       คืนค่าตำแหน่งสิ้นสุดของขอบเขต หรือ -1 ถ้าไม่ได้อยู่ในหัวลูป */
+    _loopHeaderEnd(srcBefore, declIndex, whole){
+      const parens = this._openParens(srcBefore, declIndex);
+      if (!parens.length) return -1;
+      const open = parens[parens.length - 1];
+      let k = open - 1;
+      while (k >= 0 && /\s/.test(srcBefore[k])) k--;
+      let e = k;
+      while (k >= 0 && /[A-Za-z_$]/.test(srcBefore[k])) k--;
+      const word = srcBefore.slice(k + 1, e + 1);
+      if (word !== 'for' && word !== 'while') return -1;
+
+      const w = (whole === undefined || whole === null) ? srcBefore : whole;
+      /* เดินหน้าหา ) ที่ปิดหัวลูป */
+      let d = 0, j = open, close = -1;
+      while (j < w.length){
+        const c = w[j];
+        if (c === '(') d++;
+        else if (c === ')'){ d--; if (d === 0){ close = j; break; } }
+        j++;
+      }
+      if (close < 0) return -1;
+      /* หลัง ) คือ body: ถ้าเป็น { } ใช้ปีกกานั้น ถ้าเป็นประโยคเดียวใช้จนถึง ; */
+      let p = close + 1;
+      while (p < w.length && /\s/.test(w[p])) p++;
+      if (w[p] === '{'){
+        /* ส่ง p+1 เพื่อให้สแกนรวมวงเล็บเปิดตัวนี้ด้วย (สแกนถึง p เป็นตัวก่อนหน้า) */
+        const blk = this._enclosingBlock(w.slice(0, p + 1), p + 1, w);
+        return (blk && blk.close >= 0) ? blk.close : w.length;
+      }
+      const semi = w.indexOf(';', close);
+      return semi < 0 ? w.length : semi;
+    }
+
+    /* ตัวแปรที่ประกาศด้วย let/const มีขอบเขตแค่บล็อกที่อยู่
+       ส่วน var อยู่ทั้งฟังก์ชัน จึงไม่ต้องตัด
+       คืนค่า true ถ้ายังอยู่ในขอบเขต ณ ตำแหน่ง caret */
+    _inScope(srcBefore, declIndex, caret, keyword, whole){
+      if (keyword === 'var') return true;
+      const w = (whole === undefined || whole === null) ? srcBefore : whole;
+
+      /* 1) ประกาศในหัว for/while -> ขอบเขตคือ body ของลูป */
+      const loopEnd = this._loopHeaderEnd(srcBefore, declIndex, w);
+      if (loopEnd >= 0) return caret <= loopEnd;
+
+      /* 2) ประกาศในบล็อก -> ขอบเขตคือบล็อกนั้น
+            ต้องดูว่าเส้นทางวงเล็บที่เปิดอยู่ ณ caret ยังรวมบล็อกนี้อยู่ไหม
+            (ถ้าอยู่ในบล็อกที่ลึกกว่าซึ่งปิดไปแล้ว ก็ถือว่าออกจากขอบเขต) */
+      const blk = this._enclosingBlock(srcBefore, declIndex, w);
+      if (!blk || blk.close < 0) return true;   /* ระดับบนสุด = ทั้งไฟล์ */
+      const stackAtCaret = this._openBraces(w.slice(0, caret));
+      return stackAtCaret.indexOf(blk.open) >= 0;
+    }
+
     /* ชื่อตัวแปรที่ประกาศไว้ในรายการพารามิเตอร์ เช่น "a, {b, c}, d = 1, ...rest" */
     static _params(str){
       const parts = [];
@@ -866,13 +1025,18 @@
         if (am) add(am[1], 'fn', 'function', true);
       }
 
-      /* 2) ตัวแปรที่ประกาศไว้ทั้งไฟล์ (รวม destructuring) */
-      const decl = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)/g;
+      /* 2) ตัวแปรที่ประกาศไว้ทั้งไฟล์ (รวม destructuring)
+         let/const มีขอบเขตแค่บล็อก ต้องเช็คว่ายังอยู่ในบล็อกนั้นไหม
+         ไม่งั้น i ที่ประกาศในหัว for จะลอยไปทั้งไฟล */
+      const decl = /\b(const|let|var)\s+([A-Za-z_$][\w$]*)/g;
       let m;
-      while ((m = decl.exec(src))) add(m[1], 'var', 'ตัวแปร', false);
-      const destr = /\b(?:const|let|var)\s*\{([^}]*)\}\s*=/g;
+      while ((m = decl.exec(src))){
+        if (this._inScope(src, m.index, caret, m[1], v)) add(m[2], 'var', 'ตัวแปร', false);
+      }
+      const destr = /\b(const|let|var)\s*\{([^}]*)\}\s*=/g;
       while ((m = destr.exec(src))){
-        for (const nm of CodeEditor._params(m[1])) add(nm, 'var', 'ตัวแปร', false);
+        if (!this._inScope(src, m.index, caret, m[1], v)) continue;
+        for (const nm of CodeEditor._params(m[2])) add(nm, 'var', 'ตัวแปร', false);
       }
       /* 2b) ตัวแปรที่ assign โดยลืมเขียน let/const (ใน JS คือ global)
              นักเรียนลืมบ่อย ถ้าไม่จับไว้จะไม่เห็นตัวแปรของตัวเองเลย */
@@ -882,8 +1046,10 @@
       /* 3) ชื่อฟังก์ชันที่ประกาศไว้ */
       const fns = /\bfunction\s+([A-Za-z_$][\w$]*)/g;
       while ((m = fns.exec(src))) add(m[1], 'fn', 'function', false);
-      const fns2 = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:function\b|\([^)]*\)\s*=>)/g;
-      while ((m = fns2.exec(src))) add(m[1], 'fn', 'function', false);
+      const fns2 = /\b(const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:function\b|\([^)]*\)\s*=>)/g;
+      while ((m = fns2.exec(src))){
+        if (this._inScope(src, m.index, caret, m[1], v)) add(m[2], 'fn', 'function', false);
+      }
 
       /* 4) ตัวแปรที่ debug เปิดอยู่ (มีค่าจริงให้ดู) */
       for (const x of this.vars) add(x.name, 'val', x.type, true);
@@ -891,8 +1057,40 @@
       return items;
     }
 
-    /* เดาชนิดของตัวแปรจากรูปแบบที่ประกาศไว้ เช่น const x = JSON.parse(s) -> Array */
+    /* ชนิดของค่าจริงหนึ่งตัว (ใช้เดินตาม input ของโจทย์) */
+    static _kindOfValue(v){
+      if (Array.isArray(v)) return 'Array';
+      if (v === null) return null;
+      if (typeof v === 'string') return 'String';
+      if (typeof v === 'object') return 'Object';
+      return null;   /* number / boolean ไม่มีวิธีให้แนะนำ */
+    }
+
+    /* เดาชนิดของตัวแปร โดยไล่ไปตาม input จริงของโจทย์ก่อนเสมอ
+       เช่น shape = { b: 10, k: [1,2], u: [3] } จะได้
+         shop    -> Object   (ไม่ใช่ Array)
+         shop.u  -> Array
+         shop.b  -> ไม่มี    (เป็นตัวเลข)
+       แม่นกว่าการเดาจากรูปโค้ด เพราะ JSON.parse ให้ได้ทั้ง Array และ Object */
     _typeOf(name){
+      const shape = this.opts.shape;
+      const rootName = this.opts.inputName;
+
+      /* 1) เดินตามรูปร่างอินพุตจริงก่อน */
+      if (shape !== undefined && rootName){
+        if (name === rootName) return Editor._kindOfValue(shape);
+        if (name.indexOf(rootName + '.') === 0){
+          let cur = shape;
+          for (const part of name.slice(rootName.length + 1).split('.')){
+            if (cur === null || typeof cur !== 'object') return null;
+            cur = cur[part];
+            if (cur === undefined) return null;
+          }
+          return Editor._kindOfValue(cur);
+        }
+      }
+
+      /* 2) เดาจากรูปแบบที่ประกาศไว้ในโค้ด */
       /* ชื่อที่พิมพ์ตามจุดอาจไม่ใช่ชื่อตัวแปร (เช่น Object.keys(bU).)
          ต้องเป็นชื่อระบุตัวแปรเท่านั้น ไม่งั้น regex จะพัง */
       if (!/^[A-Za-z_$][\w$]*$/.test(name)) return null;
@@ -917,7 +1115,12 @@
           if (seen.has(m)) continue;
           seen.add(m);
           const snip = METHOD_SNIPPET[m];
-          out.push({ label: m, kind: kind, detail: detail || (snip ? 'มีโครงสำเร็จ' : ''), hot: false, snippet: snip });
+          out.push({
+            label: m, kind: kind,
+            detail: detail || (snip ? 'มีโครงสำเร็จ' : ''),
+            hot: false, snippet: snip,
+            pri: TOP_MEMBERS.has(m) ? 1 : 0
+          });
         }
       };
 
@@ -951,7 +1154,11 @@
           if (it.label.toLowerCase().startsWith(q)) items.push(it);
         }
         if (!items.length){ this.closeAC(); return; }
-        items.sort((a, b) => a.label.length - b.label.length);
+        /* เรียงตามความถี่ที่ใช้จริง ไม่ใช่ความยาวชื่อ
+           ถ้าเรียงตามความยาว length (6 ตัวอักษร) จะโดนตัดตอนแสดง 12 รายการ
+           เพราะมีชื่อสั้นกว่าเยอะ แต่ length คือสิ่งที่พิมพ์ต่อท้องไปบ่อยที่สุด */
+        items.sort((a, b) =>
+          (b.pri - a.pri) || (a.label.length - b.label.length) || a.label.localeCompare(b.label));
         this.acItems = items.slice(0, 12);
         this.acIndex = 0;
         this._acStart = start + prefix.length;
