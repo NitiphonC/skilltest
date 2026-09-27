@@ -8,6 +8,10 @@
   --mono:'JetBrains Mono','Noto Sans Thai',ui-monospace,Consolas,monospace;
   --sans:'Inter','Noto Sans Thai',system-ui,-apple-system,sans-serif;
   --r:12px;
+  /* ความสูงแถบบน (ต้องตรงกับ .nav ในไฟล์นี้) — ใช้กับแผงเลื่อนที่ต้องเริ่มใต้แถบบน
+     ถ้าไม่นิยามไว้ position:fixed + top:var(--navH) จะกลายเป็น top:auto
+     แล้วกล่องจะไปโผล่ที่ตำแหน่งปกติของเอกสารแทนที่จะตรึงบนหน้าจอ */
+  --navH:58px;
 }
 *{margin:0;padding:0;box-sizing:border-box}
 /* ซ่อนแต่ยังเข้าถึงด้วยคีย์บอร์ด/เครื่องมือช่วยการเข้าถึงได้ */

@@ -91,12 +91,16 @@
   function exportDrafts(){
     const all = readAll();
     const keys = Object.keys(all);
-    if (!keys.length) { alert('ยังไม่มีงานที่บันทึกไว้เลย'); return; }
+    const hints = readHints();
+    const hintKeys = Object.keys(hints);
+    if (!keys.length && !hintKeys.length) { alert('ยังไม่มีงานที่บันทึกไว้เลย'); return; }
     const payload = {
       app: 'code-practice',
       version: 1,
       savedAt: new Date().toISOString(),
-      drafts: all
+      drafts: all,
+      /* เก็บ "ใช้คำใบ้ไปถึงระดับไหน" ไว้ด้วย เพื่อให้ครูเห็นว่าโจทย์ไหนนักเรียนติด */
+      hints: hints
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -136,12 +140,276 @@
         const d = drafts[k];
         if (d && typeof d.code === 'string') { cur[k] = { code: d.code, sel: d.sel | 0, at: d.at || Date.now() }; n++; }
       });
-      if (!n) { alert('ไม่พบโค้ดที่นำเข้าได้เลย'); return; }
+      /* รับข้อมูล "เคยใช้คำใบ้ถึงระดับไหน" มารวมด้วย (ถ้าไฟล์เก่าไม่มีก็ข้าม) */
+      let hn = 0;
+      const inHints = (data && typeof data === 'object' && data.hints) ? data.hints : null;
+      if (inHints && typeof inHints === 'object' && !Array.isArray(inHints)) {
+        const curH = readHints();
+        Object.keys(inHints).forEach(k => {
+          const s = inHints[k];
+          if (!s || typeof s !== 'object') return;
+          const prev = (curH[k] && typeof curH[k] === 'object') ? curH[k] : { lv: 0, sols: [] };
+          const lv = Math.max(Number(prev.lv) || 0, Number(s.lv) || 0);
+          const sols = Array.isArray(prev.sols) ? prev.sols.slice() : [];
+          if (Array.isArray(s.sols)) s.sols.forEach(x => { if (sols.indexOf(x) < 0) sols.push(x); });
+          curH[k] = { lv: lv, sols: sols };
+          hn++;
+        });
+        try { localStorage.setItem(HINT_KEY, JSON.stringify(curH)); } catch (e) { /* โหมดส่วนตัว */ }
+      }
+      if (!n && !hn) { alert('ไม่พบโค้ดที่นำเข้าได้เลย'); return; }
       if (!writeAll(cur)) { alert('บันทึกลงเครื่องไม่สำเร็จ (พื้นที่เต็ม หรือเบราว์เซอร์ปิดกั้น)'); return; }
-      alert('นำเข้างานที่บันทึกไว้ ' + n + ' โจทย์เรียบร้อย\nกดรีเฟรชหน้าเพื่อดูผล');
+      let msg = '';
+      if (n) msg += 'นำเข้างาน ' + n + ' โจทย์';
+      if (hn) msg += (msg ? '\n' : '') + 'นำเข้าประวัติการใช้คำใบ้ ' + hn + ' โจทย์';
+      alert(msg + 'เรียบร้อย\nกดรีเฟรชหน้าเพื่อดูผล');
     };
     fr.onerror = () => alert('อ่านไฟล์ไม่สำเร็จ');
     fr.readAsText(f);
+  }
+
+  /* ---------------- คำใบ้ 3 ระดับ + เฉลยหลายแบบ ----------------
+     หลักการ: โจทย์เดียวกันแก้ได้หลายวิธี จึงไม่ควรชี้ทางเดียว
+       ระดับ 1 = ได้อะไรมา ต้องคืนอะไร        (ยังไม่บอกวิธี)
+       ระดับ 2 = ต้องคิดเรื่องอะไรบ้าง        (ยังไม่บอกชื่อวิธี)
+       ระดับ 3 = ยื่นทางเลือกพร้อมต้นทุน/ประโยชน์ ให้ผู้เรียนเลือกเอง
+     บันทึกไว้ว่าเปิดถึงระดับไหนและดูเฉลยแบบไหนไปแล้ว
+     เพื่อให้ครูเห็นว่าโจทย์ไหนนักเรียนต้องพึ่งคำใบ้ถึงระดับสุดท้าย */
+  const HINT_KEY = 'cp_hints_v1';
+  const HINT_SRC = 'problems/solutions.js?v=56';
+  let hintData = null;      // window.HINTS
+  let hintLoad = null;      // Promise กำลังโหลด
+  let hintOpenLv = [];      // ระดับที่เปิดค้างไว้ในรอบนี้
+  let hintOpenSol = [];     // การ์ดเฉลยที่เปิดค้างไว้ในรอบนี้
+
+  function readHints(){
+    try {
+      const o = JSON.parse(localStorage.getItem(HINT_KEY));
+      return (o && typeof o === 'object') ? o : {};
+    } catch (e) { return {}; }
+  }
+  function hintState(){
+    const a = readHints();
+    const s = a[P.id];
+    return (s && typeof s === 'object') ? s : { lv: 0, sols: [] };
+  }
+  function markHint(patch){
+    const a = readHints();
+    const s = a[P.id] && typeof a[P.id] === 'object' ? a[P.id] : { lv: 0, sols: [] };
+    if (!Array.isArray(s.sols)) s.sols = [];
+    if (typeof s.lv !== 'number') s.lv = 0;
+    if (patch.lv > s.lv) s.lv = patch.lv;
+    if (patch.sol && s.sols.indexOf(patch.sol) < 0) s.sols.push(patch.sol);
+    a[P.id] = s;
+    try { localStorage.setItem(HINT_KEY, JSON.stringify(a)); } catch (e) { /* โหมดส่วนตัว */ }
+    paintHintBtn();
+  }
+
+  function loadHints(){
+    if (window.HINTS) { hintData = window.HINTS; return Promise.resolve(hintData); }
+    if (hintLoad) return hintLoad;
+    hintLoad = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = HINT_SRC;
+      s.onload = () => { hintData = window.HINTS || {}; resolve(hintData); };
+      s.onerror = () => reject(new Error('โหลดข้อมูลคำใบ้ไม่สำเร็จ'));
+      document.head.appendChild(s);
+    });
+    return hintLoad;
+  }
+
+  const CHEV = '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>';
+
+  function hintEntry(){
+    if (hintData) return hintData[P.id];
+    return null;
+  }
+
+  function hintHead(label, open, n, seen) {
+    return '<button class="hlvl-btn" type="button">'
+      + '<span class="hlvl-n">' + n + '</span>'
+      + '<span>' + esc(label) + '</span>'
+      + (seen ? '<span class="seen">เปิดแล้ว</span>' : '')
+      + CHEV + '</button>';
+  }
+
+  function renderHints() {
+    const box = $('hintBody');
+    const entry = hintEntry();
+    if (!entry) {
+      box.innerHTML = '<div class="empty">โจทย์นี้ยังไม่ได้เตรียมคำใบ้ไว้</div>';
+      paintHintFoot();
+      return;
+    }
+    const st = hintState();
+    const hs = Array.isArray(entry.hints) ? entry.hints : [];
+    const labels = ['ดูข้อมูล — ได้อะไรมา ต้องคืนอะไร',
+                    'คิดเรื่องอะไร — ยังไม่บอกชื่อวิธี',
+                    'ทางเลือก — เฉลยหลายแบบพร้อมข้อดีข้อเสีย'];
+
+    let html = '';
+    for (let i = 0; i < 3; i++) {
+      const isOpen = hintOpenLv.indexOf(i + 1) >= 0;
+      html += '<div class="hlvl' + (isOpen ? ' open' : '') + '" data-lv="' + (i + 1) + '">';
+      html += hintHead(labels[i], isOpen, i + 1, st.lv > i);
+      if (i < 2) {
+        html += '<div class="hlvl-body">' + esc(hs[i] || '(ยังไม่มีคำใบ้ระดับนี้)') + '</div>';
+      } else {
+        html += '<div class="hlvl-body">'
+          + '<div>' + esc(hs[2] || '') + '</div>'
+          + renderSolutions(entry, st)
+          + '</div>';
+      }
+      html += '</div>';
+    }
+    box.innerHTML = html;
+    paintHintFoot();
+  }
+
+  function renderSolutions(entry, st) {
+    const sols = Array.isArray(entry.solutions) ? entry.solutions : [];
+    if (!sols.length) return '<div class="empty">ยังไม่มีเฉลยอ้างอิงสำหรับโจทย์นี้</div>';
+    let html = '';
+    for (let i = 0; i < sols.length; i++) {
+      const s = sols[i];
+      const key = s.name || ('sol' + i);
+      const rec = !!s.recommended;
+      const open = hintOpenSol.indexOf(key) >= 0;
+      html += '<div class="sol' + (rec ? ' sol-rec' : '') + (open ? ' open' : '') + '" data-sol="' + esc(key) + '">';
+      html += '<button class="sol-btn" type="button">'
+        + '<span class="sol-nm">'
+        + '<span class="sol-name">' + esc(s.name || '(ไม่มีชื่อ)') + '</span>'
+        + '<span class="sol-cx">เวลา ' + esc(s.time || '-') + ' · หน่วยความจำ ' + esc(s.space || '-') + '</span>'
+        + '</span>'
+        + (rec ? '<span class="sol-tag">แนะนำ</span>' : '')
+        + CHEV
+        + '</button>';
+      html += '<div class="sol-body">';
+      if (s.why) html += '<div class="sol-why">' + esc(s.why) + '</div>';
+      if (Array.isArray(s.pros) && s.pros.length) {
+        html += '<div class="sol-lb">ข้อดี</div><ul class="sol-pro">'
+          + s.pros.map(p => '<li>' + esc(p) + '</li>').join('') + '</ul>';
+      }
+      if (Array.isArray(s.cons) && s.cons.length) {
+        html += '<div class="sol-lb">ข้อเสีย</div><ul class="sol-con">'
+          + s.cons.map(p => '<li>' + esc(p) + '</li>').join('') + '</ul>';
+      }
+      if (s.code) {
+        html += '<div class="sol-lb">โค้ด</div><div class="sol-code">'
+          + '<pre><code>' + esc(s.code) + '</code></pre>'
+          + '<button class="btn sm sol-copy" type="button">คัดลอก</button>'
+          + '</div>';      }
+      html += '<div class="sol-note">ลองเขียนเองก่อนเปิดดูนะ — ถ้าลองแล้วไม่ออก '
+        + 'เทียบกับเฉลยนี้จะได้เร็วกว่าการเริ่มใหม่ตั้งแต่ต้น</div>';
+      html += '</div></div>';
+    }
+    return html;
+  }
+
+  function paintHintFoot() {
+    const st = hintState();
+    const parts = [];
+    parts.push(st.lv > 0 ? 'เปิดคำใบ้ถึงระดับ ' + st.lv + ' จาก 3' : 'ยังไม่ได้เปิดคำใบ้');
+    if (st.sols && st.sols.length) parts.push('ดูเฉลยแล้ว ' + st.sols.length + ' แบบ');
+    $('hintStat').textContent = parts.join(' · ');
+  }
+
+  function paintHintBtn() {
+    const b = $('btnHint');
+    if (!b) return;
+    const st = hintState();
+    b.classList.toggle('used', st.lv > 0 || (st.sols && st.sols.length > 0));
+  }
+
+  function openHint() {
+    const panel = $('hintPanel');
+    const bg = $('hintBg');
+    panel.hidden = false;
+    bg.hidden = false;
+    $('btnHint').classList.add('on');
+    $('hintBody').innerHTML = '<div class="empty">กำลังโหลดคำใบ้…</div>';
+    paintHintBtn();
+    loadHints().then(() => {
+      /* เปิดค้างไว้ถึงระดับที่เคยไปถึงแล้ว เพื่อให้ทำต่อได้โดยไม่ต้องกดซ้ำ */
+      const st = hintState();
+      hintOpenLv = [];
+      for (let i = 1; i <= (st.lv > 0 ? st.lv : 0); i++) hintOpenLv.push(i);
+      hintOpenSol = Array.isArray(st.sols) ? st.sols.slice() : [];
+      renderHints();
+    }).catch(() => {
+      $('hintBody').innerHTML = '<div class="empty">โหลดข้อมูลคำใบ้ไม่สำเร็จ ลองรีเฟรชหน้า</div>';
+    });
+  }
+
+  function closeHint() {
+    $('hintPanel').hidden = true;
+    $('hintBg').hidden = true;
+    $('btnHint').classList.remove('on');
+    hintOpenLv = [];
+    hintOpenSol = [];
+    paintHintBtn();
+  }
+
+  function hintIsOpen() { return !$('hintPanel').hidden; }
+
+  function wireHints() {
+    $('btnHint').addEventListener('click', () => (hintIsOpen() ? closeHint() : openHint()));
+    $('hintClose').addEventListener('click', closeHint);
+    $('hintBg').addEventListener('click', closeHint);
+
+    $('hintBody').addEventListener('click', e => {
+      /* เปิด/ปิดกล่องคำใบ้แต่ละระดับ */
+      const lvlBtn = e.target.closest('.hlvl-btn');
+      if (lvlBtn) {
+        const box = lvlBtn.parentNode;
+        const lv = Number(box.getAttribute('data-lv')) || 1;
+        const willOpen = !box.classList.contains('open');
+        const at = hintOpenLv.indexOf(lv);
+        if (willOpen && at < 0) hintOpenLv.push(lv);
+        if (!willOpen && at >= 0) hintOpenLv.splice(at, 1);
+        markHint({ lv: willOpen ? lv : 0 });
+        renderHints();
+        return;
+      }
+      /* เปิด/ปิดการ์ดเฉลย และนับว่าเคยดูโค้ด */
+      const solBtn = e.target.closest('.sol-btn');
+      if (solBtn) {
+        const box = solBtn.parentNode;
+        const key = box.getAttribute('data-sol');
+        const at = hintOpenSol.indexOf(key);
+        if (at < 0) hintOpenSol.push(key);
+        else hintOpenSol.splice(at, 1);
+        markHint({ lv: 3, sol: key });
+        renderHints();
+        return;
+      }
+      /* คัดลอกเฉลยไปที่ clipboard */
+      const cp = e.target.closest('.sol-copy');
+      if (cp) {
+        const pre = cp.parentNode.querySelector('pre');
+        if (!pre) return;
+        const text = pre.textContent;
+        const done = () => {
+          const old = cp.textContent;
+          cp.textContent = 'คัดลอกแล้ว';
+          setTimeout(() => { cp.textContent = old; }, 1400);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(done, () => { window.prompt('คัดลอกโค้ดนี้', text); });
+        } else {
+          window.prompt('คัดลอกโค้ดนี้', text);
+        }
+      }
+    });
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && hintIsOpen()) { closeHint(); return; }
+      if (!(e.ctrlKey || e.metaKey)) return;
+      if (e.key.toLowerCase() === 'h') {
+        e.preventDefault();
+        hintIsOpen() ? closeHint() : openHint();
+      }
+    });
   }
 
   /* ---------------- starter code ----------------
@@ -751,6 +1019,8 @@
     $('btnExport').addEventListener('click', exportDrafts);
     $('btnImport').addEventListener('click', importDrafts);
     $('fileImport').addEventListener('change', e => handleImportFile(e.target.files && e.target.files[0]));
+    wireHints();
+    paintHintBtn();
     /* ปุ่ม sidebar: จอกว้างยุบ/ขยายในแถบ, จอแคบเป็น panel เลื่อนเข้ามา */
     const sideEl = $('side');
     const bgEl = $('sidebg');

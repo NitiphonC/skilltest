@@ -130,6 +130,8 @@ body::before{
 .chip.score{background:var(--card2);color:var(--fg3);border:1px solid var(--line2)}
 .chip.draft{background:rgba(76,154,255,.14);color:var(--acc);border:1px solid rgba(76,154,255,.3)}
 .chip.draft:empty{display:none}
+.chip.hintlv{background:rgba(227,179,65,.14);color:var(--warn);border:1px solid rgba(227,179,65,.32)}
+.chip.hintfull{background:rgba(227,179,65,.2);color:var(--warn);border:1px solid rgba(227,179,65,.5)}
 .pc-go{margin-left:auto;display:flex;align-items:center;gap:5px;
   font-family:var(--mono);font-size:12px;color:var(--acc);opacity:0;transform:translateX(-5px);transition:.18s}
 .pcard:hover .pc-go{opacity:1;transform:translateX(0)}
@@ -183,12 +185,14 @@ body::before{
   <div class="grid" id="grid"></div>
 </div>
 
-<script src="problems/problems.js?v=54"></script>
+<script src="problems/problems.js?v=56"></script>
 <script>
 const KEY = 'cp_progress_v1';
 const DRAFT_KEY = 'cp_draft_v1';
+const HINT_KEY = 'cp_hints_v1';
 const readDone = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch(e){ return {}; } };
 const readDrafts = () => { try { return JSON.parse(localStorage.getItem(DRAFT_KEY)) || {}; } catch(e){ return {}; } };
+const readHints = () => { try { return JSON.parse(localStorage.getItem(HINT_KEY)) || {}; } catch(e){ return {}; } };
 
 /* เวลาแบบสั้น ๆ: "เมื่อสักครู่" / "3 ชั่วโมงที่แล้ว" / "เมื่อวาน"
    คืน '' ถ้าเวลาไม่สมเหตุสมผล (ข้อมูลเสีย หรือนาฬิกาเพี้ยน) */
@@ -217,8 +221,9 @@ function draftTitle(dr){
 function render(){
   const done = readDone();
   const drafts = readDrafts();
+  const hints = readHints();
   const grid = document.getElementById('grid');
-  let html = '', n = 0, d = 0, w = 0;
+  let html = '', n = 0, d = 0, w = 0, hv = 0;
 
   for(const id in PROBLEMS){
     const p = PROBLEMS[id];
@@ -228,6 +233,14 @@ function render(){
     const dr = drafts[id];
     const hasDraft = !!(dr && typeof dr.code === 'string' && dr.code.trim());
     if(hasDraft) w++;
+    /* ป้ายบอกว่าเคยเปิดคำใบ้ถึงระดับไหน — ระดับ 3 คือดูเฉลยแล้ว */
+    const hs = hints[id];
+    const hv3 = !!(hs && hs.lv >= 3);
+    const hvAny = !!(hs && ((hs.lv|0) > 0 || (hs.sols && hs.sols.length)));
+    if(hv3) hv++;
+    const hintChip = hv3
+      ? `<span class="chip hintfull" title="เคยเปิดถึงระดับทางเลือกและดูเฉลยแล้ว">ใช้เฉลย</span>`
+      : (hvAny ? `<span class="chip hintlv" title="เคยเปิดคำใบ้ระดับ ${hs.lv}">คำใบ้ ${hs.lv}</span>` : '');
 
     html += `
     <a class="pcard${isDone?' done':''}" href="editor.html?id=${id}">
@@ -243,6 +256,7 @@ function render(){
         <span class="chip ${p.difficulty}">${p.difficulty}</span>
         <span class="chip score">${p.score} คะแนน</span>
         ${hasDraft?`<span class="chip draft" title="${draftTitle(dr)}">${draftLabel(dr)}</span>`:''}
+        ${hintChip}
         <span class="pc-go">ทำโจทย์
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
         </span>
@@ -254,7 +268,9 @@ function render(){
   document.getElementById('doneCount').textContent = d;
   document.getElementById('gridCount').textContent = n + ' problems';
   const dw = document.getElementById('draftCount');
-  if (dw) dw.textContent = w ? w + ' โจทย์มีงานค้างไว้' : '';
+  let tail = w ? w + ' โจทย์มีงานค้างไว้' : '';
+  if (hv) tail += (tail ? ' · ' : '') + hv + ' โจทย์ใช้คำใบ้ถึงเฉลย';
+  if (dw) dw.textContent = tail;
 }
 render();
 </script>
