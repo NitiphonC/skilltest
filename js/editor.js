@@ -1132,13 +1132,16 @@
       while ((m = re.exec(v))){
         const name = m[1];
         const open = m.index + m[0].length - 1;
+        /* ถ้ายังไม่ได้ปิด } ให้ถือว่าถึงท้ายไฟล์
+           นักเรียนกำลังพิมพ์ class อยู่ ต้องได้คำแนะนำ this. แม้ยังไม่เขียนจบ */
         const close = this._matchBrace(v, open);
-        if (close < 0) continue;
-        const body = v.slice(open + 1, close);
+        const bodyEnd = close < 0 ? v.length : close;
+        const body = v.slice(open + 1, bodyEnd);
         const info = {
           name,
           parent: m[2] || null,
-          open, close,
+          open, close: bodyEnd,   /* ถ้ายังไม่ปิด } ให้ถือว่าถึงท้ายไฟล์ */
+          unterminated: close < 0,
           fields: [],
           methods: [],
           statics: [],
@@ -1171,7 +1174,7 @@
         }
         map[name] = info;
         order.push(name);
-        re.lastIndex = close;
+        if (close >= 0) re.lastIndex = close;
       }
       this._clsSrc = v;
       this._cls = { map, order };
@@ -1238,12 +1241,14 @@
       return out;
     }
 
-    /* คลาสที่เคอร์เซอร์อยู่ใน body ของมัน */
+    /* คลาสที่เคอร์เซอร์อยู่ใน body ของมัน
+       ใช้ <= เพราะเคอร์เซอร์มักอยู่ท้าย ๆ ของบรรทัดที่เพิ่งพิมพ์
+       ซึ่งอาจตรงกับปลาย body พอดี */
     _classAt(pos){
       const idx = this._classIndex();
       for (const name of idx.order){
         const c = idx.map[name];
-        if (pos > c.open && pos < c.close) return c;
+        if (pos > c.open && pos <= c.close) return c;
       }
       return null;
     }
@@ -1262,9 +1267,11 @@
           || (o === stack[0] && prev === '');
         if (!looksLikeObject) continue;
         const close = this._matchBrace(v, o);
-        if (close < 0) continue;
-        const names = this._memberNamesOf(v.slice(o + 1, close));
-        if (names.length) return { open: o, close, names };
+        /* ยังไม่ได้ปิด } = กำลังพิมพ์อยู่ ให้ถือว่าถึงท้ายไฟล์ */
+        const end = close < 0 ? v.length : close;
+        const names = this._memberNamesOf(v.slice(o + 1, end));
+        if (names.length) return { open: o, close: end, names };
+        break;
       }
       return null;
     }
@@ -1303,10 +1310,10 @@
       while ((m = re.exec(v))){
         const open = m.index + m[0].length - 1;
         const close = this._matchBrace(v, open);
-        if (close < 0) continue;
-        const names = this._memberNamesOf(v.slice(open + 1, close));
+        const end = close < 0 ? v.length : close;
+        const names = this._memberNamesOf(v.slice(open + 1, end));
         out[m[1]] = names.map(n => ({ label: n, kind: 'fld', detail: 'ของ ' + m[1] }));
-        re.lastIndex = close;
+        if (close >= 0) re.lastIndex = close;
       }
       const re2 = /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*Object\.create\(\s*([A-Za-z_$][\w$]*)\s*\)/g;
       while ((m = re2.exec(v))){
