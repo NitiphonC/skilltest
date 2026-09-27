@@ -10,6 +10,12 @@
   const $ = id => document.getElementById(id);
   const esc = s => String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 
+  /* ไอคอนบ้าน ใช้ซ้ำหลายที่ */
+  const ICON_HOME = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>';
+
+  /* จำจุดเริ่มจอบ Submit ไว้บอกเวลาที่ใช้ไป */
+  let submitStart = Date.now();
+
   /* ---------------- บันทึกงานอัตโนมัติ ----------------
      เก็บแยกทีละโจทย์ใน localStorage คีย์เดียว เพื่อให้กลับมาทำต่อได้
        cp_draft_v1 = { p1: { code, sel, at }, p2: {...}, ... }
@@ -260,8 +266,10 @@
 
   /* ================= SUBMIT (ล่างขวา) ================= */
   function submit() {
+    submitStart = Date.now();
     $('subTag').textContent = 'กำลังตรวจ…';
     $('subBody').innerHTML = '<div class="empty">กำลังทำงาน…</div>';
+    $('subDetail').innerHTML = '';
     setBusy(true);
     nextTick(() => {
       const code = ed.getValue();
@@ -310,14 +318,14 @@
     const total = P.testCases.length;
     const ok = results.filter(r => r.passed).length;
     const bad = results.length - ok;
+    const allPass = bad === 0 && total > 0;
+    const score = Math.round(P.score * ok / total);
 
-    let h = `<div class="sum">
-      <span class="ok">ผ่าน ${ok}</span>
-      <span class="dim">/ ${total}</span>
-      ${bad ? '<span class="no">ไม่ผ่าน ' + bad + '</span>' : ''}
-      <span class="dim">· คะแนน ${Math.round(P.score * ok / total)}/${P.score}</span>
-    </div>`;
+    /* ผ่านทุกเคส -> แสดงหน้าสรุปคะแนนใหชัดเจน (แทนที่จะเพียงข้อความสรุปเล็ก ๆ) */
+    $('subBody').innerHTML = allPass ? doneCard(total, score) : tryAgainCard(total, ok, score);
 
+    /* รายละเอียดแต่ละเคส (พับไว้ใต้หน้าสรุป) */
+    let h = '';
     results.forEach((r, i) => {
       const n = r.caseNum || (i + 1);
       h += `<div class="tc" data-i="${i}">
@@ -336,11 +344,87 @@
         : '<span class="r">(ไม่มี console.log)</span>'}`;
       h += `</div></div>`;
     });
-
-    $('subBody').innerHTML = h;
-    $('subBody').querySelectorAll('.tc-h').forEach(el => {
+    const detail = $('subDetail');
+    detail.innerHTML = h;
+    detail.querySelectorAll('.tc-h').forEach(el => {
       el.addEventListener('click', () => el.parentElement.classList.toggle('open'));
     });
+
+    /* ปุ่มกาง/ยกรายละเอียดแต่ละ Test Case */
+    const tg = $('finToggle');
+    if (tg) tg.addEventListener('click', () => {
+      const on = detail.classList.toggle('show');
+      tg.textContent = on ? 'ซ่อนรายละเอียดแต่ละ Test Case' : 'ดูรายละเอียดแต่ละ Test Case';
+      detail.parentElement.classList.toggle('expanded', on);
+    });
+
+    /* ปุ่มกลับไปแก้โค้ด (เฉพาะตอนยังไม่ผ่าน) — กางเคสที่ยังตกให้เห็นทันที */
+    const fe = $('finEdit');
+    if (fe) fe.addEventListener('click', () => {
+      if (!detail.classList.contains('show') && tg) tg.click();
+      const rows = detail.querySelectorAll('.tc');
+      let bad = null;
+      for (const row of rows) if (row.querySelector('.tc-s.no')) { bad = row; break; }
+      if (bad) {
+        for (const row of rows) row.classList.toggle('open', row === bad);
+        bad.scrollIntoView({ block: 'nearest' });
+      }
+      ed.focus();
+    });
+  }
+
+  /* ---------- หน้าสรุป: ผ่านหมด ---------- */
+  function doneCard(total, score){
+    const secs = Math.max(1, Math.round((Date.now() - submitStart) / 1000));
+    const mm = Math.floor(secs / 60), ss = secs % 60;
+    const pct = P.score ? Math.round(score / P.score * 100) : 0;
+    const grade = pct === 100 ? 'เต็ม' : pct >= 80 ? 'ดีมาก' : pct >= 60 ? 'พอใช้' : 'ยังต้องพัฒนา';
+    const nb = neighbour();
+    return `<div class="finish pass">
+      <div class="fin-badge">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+      </div>
+      <div class="fin-tt">ทำถูกต้องครบทุก Test Case</div>
+      <div class="fin-score">${score}<span>/${P.score}</span></div>
+      <div class="fin-grade">${grade} · ผ่าน ${total} เคส · ใช้เวลา ${mm} นาที ${ss} วินาที</div>
+      <div class="fin-acts">
+        ${nb.next ? `<a class="btn go" href="editor.html?id=${nb.next.id}">โจทย์ถัดไป
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>` : ''}
+        ${nb.prev ? `<a class="btn" href="editor.html?id=${nb.prev.id}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 18l-6-6 6-6"/></svg>ย้อนกลับ</a>` : ''}
+        <a class="btn" href="index.html">${ICON_HOME} หน้ารายการโจทย์</a>
+      </div>
+    </div>
+    <div class="fin-toggle" id="finToggle">ดูรายละเอียดแต่ละ Test Case</div>`;
+  }
+
+  /* ---------- หน้าสรุป: ยังไม่ผ่านหมด ----------
+     ไม่ใส่ปุ่ม "กลับไปเลือกโจทย์" เพราะหลังผิดคือจังหวะที่ควรแก้ต่อ ไม่ใช่เลิกทำ
+     ปุ่มกลับหน้าหลักอยู่ในแถบบนตลอดอยู่แล้ว */
+  function tryAgainCard(total, ok, score){
+    const left = total - ok;
+    return `<div class="finish fail">
+      <div class="fin-badge">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v5M12 16.5v.5"/><circle cx="12" cy="12" r="9"/></svg>
+      </div>
+      <div class="fin-tt">ยังไม่ผ่านครบ</div>
+      <div class="fin-score">${score}<span>/${P.score}</span></div>
+      <div class="fin-grade">ผ่าน ${ok} จาก ${total} เคส — เหลืออีก ${left} เคสที่ยังไม่ถูก</div>
+      <div class="fin-acts">
+        <button class="btn go" id="finEdit">กลับไปแก้โค้ดต่อ</button>
+      </div>
+    </div>
+    <div class="fin-toggle" id="finToggle">ดูรายละเอียดแต่ละ Test Case</div>`;
+  }
+
+  /* โจทย์ก่อนหน้า / ถัดไป ตามลำดับที่แสดงบนหน้าแรก */
+  function neighbour(){
+    const ids = Object.keys(PROBLEMS);
+    const i = ids.indexOf(P.id);
+    return {
+      prev: i > 0 ? PROBLEMS[ids[i - 1]] : null,
+      next: i >= 0 && i < ids.length - 1 ? PROBLEMS[ids[i + 1]] : null
+    };
   }
 
   function saveProgress() {

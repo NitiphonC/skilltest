@@ -150,6 +150,7 @@ button{font-family:inherit}
 .ac-l{font-weight:500}
 .ac-l.var{color:#a5d6ff}.ac-l.par{color:#7ee787}.ac-l.val{color:#d2a8ff}
 .ac-l.kw{color:#ff7b72}.ac-l.snip{color:var(--pur)}.ac-l.fn{color:#82aaff}.ac-l.meth{color:#79c0ff}
+.ac-l.glb{color:#ffa657}
 .ac-d{color:var(--fg3);font-size:11px;font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ac-k{margin-left:auto;font-size:9.5px;color:var(--fg3);text-transform:uppercase;letter-spacing:.4px}
 

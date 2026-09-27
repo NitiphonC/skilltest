@@ -13,29 +13,50 @@
     'in','of','delete','void','this','null','undefined','true','false','async','await','class','extends','super'];
 
   const BUILTINS = ['console.log','console.error','console.warn','console.info','console.debug',
-    'JSON.stringify','JSON.parse','JSON.keys',
+    'JSON.stringify','JSON.parse',
     'Math.floor','Math.ceil','Math.round','Math.abs','Math.sqrt','Math.pow','Math.min','Math.max',
-    'Math.trunc','Math.sign','Math.log','Math.exp','Math.hypot','Math.random','Math.PI','Math.E',
+    'Math.trunc','Math.sign','Math.log','Math.exp','Math.hypot','Math.random',
     'Object.keys','Object.values','Object.entries','Object.assign','Object.freeze',
     'Array.isArray','Array.from','Array.of',
     'Number.isInteger','Number.isFinite','Number.isNaN','Number.parseInt','Number.parseFloat',
     'Number.MAX_SAFE_INTEGER','Number.MIN_SAFE_INTEGER',
     'parseInt','parseFloat','isNaN','isFinite',
+    'Infinity','NaN','undefined','globalThis',
     'String','Number','Boolean','Array','Object','Map','Set','require'];
+
+  /* ค่าคงที่ที่ JS มีให้แต่ไม่ใช่ keyword และไม่ใช่ตัวในตัวที่เรียกได้ */
+  const GLOBALS = ['Infinity','NaN','undefined','globalThis','structuredClone','queueMicrotask'];
+
+  /* วิธีแบบ static ของ namespace ที่รู้จัก — พิมพ์ "Math." แล้วต้องขึ้น
+     (เดิมไม่ขึ้นเลย เพราะไปหาชนิดของตัวแปรแทนที่จะดูว่าเป็น namespace) */
+  const STATIC = {
+    console: ['log','error','warn','info','debug','table','time','timeEnd','count','group','groupEnd','assert','dir'],
+    Math: ['floor','ceil','round','abs','sqrt','pow','min','max','trunc','sign','log','log2','log10',
+      'exp','hypot','cbrt','random','PI','E','atan2','sin','cos'],
+    JSON: ['parse','stringify'],
+    Number: ['isInteger','isFinite','isNaN','parseInt','parseFloat','isSafeInteger',
+      'MAX_SAFE_INTEGER','MIN_SAFE_INTEGER','EPSILON','MAX_VALUE','MIN_VALUE',
+      'POSITIVE_INFINITY','NEGATIVE_INFINITY'],
+    Object: ['keys','values','entries','assign','freeze','isFrozen','seal','fromEntries',
+      'getPrototypeOf','defineProperty','create'],
+    Array: ['isArray','from','of'],
+    String: ['fromCharCode','fromCodePoint','raw'],
+    globalThis: []
+  };
 
   /* วิธีของ Array / String / Map / Set — แนะนำตอนพิมพ์หลังจุด */
   const METHODS = {
-    'Array': ['push','pop','shift','unshift','slice','splice','concat','join','indexOf',
+    'Array': ['length','push','pop','shift','unshift','slice','splice','concat','join','indexOf',
       'lastIndexOf','includes','reverse','find','findIndex','filter','map','forEach','reduce',
-      'some','every','sort','flat','fill','at','keys','values','entries','length'],
+      'some','every','sort','flat','fill','at','keys','values','entries'],
     'String': ['length','charAt','charCodeAt','indexOf','lastIndexOf','includes','startsWith',
       'endsWith','slice','substring','substr','split','replace','replaceAll','toUpperCase',
-      'toLowerCase','trim','trimStart','trimEnd','repeat','padStart','padEnd','concat'],
+      'toLowerCase','trim','trimStart','trimEnd','repeat','padStart','padEnd','concat','at'],
     'Map': ['get','set','has','delete','size','keys','values','entries','clear','forEach'],
     'Set': ['add','has','delete','size','keys','values','entries','clear','forEach'],
-    'Object': ['keys','values','entries','assign','freeze','hasOwnProperty']
+    'Object': ['keys','values','entries','hasOwnProperty','toString','assign','freeze']
   };
-  /* ชื่อก่อนจุดที่เดาว่าเป็นอะไร เพื่อเลือกชุดวิธีให้เหมาะ */
+  /* ชื่อก่อนจุดที่เดาว่าเป็นอะไร เพื่อเลือกชุดวิธีให้เหมาะ (เช่น x ที่ประกาศว่าเป็น Array) */
   const OWNER_KIND = {
     console: null, JSON: 'Object', Math: null, Object: 'Object',
     Map: 'Map', Set: 'Set', WeakMap: 'Map', WeakSet: 'Set'
@@ -45,14 +66,25 @@
     'for': 'for (let ${1:i} = 0; ${1:i} < ${2:len}; ${1:i}++) {\n\t${0}\n}',
     'forof': 'for (const ${1:x} of ${2:arr}) {\n\t${0}\n}',
     'forin': 'for (const ${1:k} in ${2:obj}) {\n\t${0}\n}',
+    'while': 'while (${1:cond}) {\n\t${0}\n}',
+    'dowhile': 'do {\n\t${0}\n} while (${1:cond});',
     'if': 'if (${1:cond}) {\n\t${0}\n}',
     'ifelse': 'if (${1:cond}) {\n\t${2}\n} else {\n\t${0}\n}',
-    'while': 'while (${1:cond}) {\n\t${0}\n}',
+    'elseif': '} else if (${1:cond}) {\n\t${0}\n}',
     'fn': 'function ${1:name}(${2:args}) {\n\t${0}\n}',
+    'arrow': '(${1:a}, ${2:b}) => {\n\treturn ${3};\n}',
     'log': 'console.log(${1:value});',
     'return': 'return ${1:value};',
     'try': 'try {\n\t${0}\n} catch (err) {\n\tconsole.log(err);\n}',
-    'switch': 'switch (${1:val}) {\n\tcase ${2:a}:\n\t\t${3}\n\t\tbreak;\n\tdefault:\n\t\t${0}\n}'
+    'switch': 'switch (${1:val}) {\n\tcase ${2:a}:\n\t\t${3}\n\t\tbreak;\n\tdefault:\n\t\t${0}\n}',
+    /* วิธีของ array — ใส่โครงให้ ไม่ต้องพิมพ์เอง */
+    'map': 'arr.map(${1:x} => {\n\treturn ${2};\n});',
+    'filter': 'arr.filter(${1:x} => ${2:true});',
+    'foreach': 'arr.forEach(${1:x} => {\n\t${0}\n});',
+    'reduce': 'arr.reduce((acc, ${1:x}) => {\n\t${2}\n\treturn acc;\n}, ${3:init});',
+    'sortarr': 'arr.sort((${1:a}, ${2:b}) => ${3:a - b});',
+    'arr': 'const ${1:name} = [${2}];',
+    'obj': 'const ${1:name} = {\n\t${2:key}: ${3:value}\n};'
   };
 
   /* ตัวเปิด -> ตัวปิดที่ต้องใส่ให้อัตโนมัติ
@@ -60,6 +92,49 @@
   const PAIRS = { '(': ')', '[': ']', '{': '}', '"': '"', "'": "'", '`': '`' };
   const CLOSERS = { ')': 1, ']': 1, '}': 1, '"': 1, "'": 1, '`': 1 };
   const INDENT = '    ';
+
+  /* โครงสำเร็จให้เมื่อพิมพ์ method ของ array/string ตามด้วยจุด
+     เช่น พิมพ์ items.red แล้วกด Tab -> ได้ items.reduce((acc, x) => { ... }, init)
+     ต้องผูกกับ member path เพราะการใช้ method ต้องพิมพ์หลังจุดเสมอ */
+  const METHOD_SNIPPET = {
+    map: 'map(${1:x} => {\n\treturn ${2};\n})',
+    filter: 'filter(${1:x} => ${2:true})',
+    forEach: 'forEach(${1:x} => {\n\t${0}\n})',
+    reduce: 'reduce((acc, ${1:x}) => {\n\t${2}\n\treturn acc;\n}, ${3:init})',
+    sort: 'sort((${1:a}, ${2:b}) => ${3:a - b})',
+    find: 'find(${1:x} => ${2:true})',
+    findIndex: 'findIndex(${1:x} => ${2:true})',
+    some: 'some(${1:x} => ${2:true})',
+    every: 'every(${1:x} => ${2:true})',
+    join: 'join(${1:", "})',
+    split: 'split(${1:" "})',
+    replace: 'replace(${1:from}, ${2:to})',
+    replaceAll: 'replaceAll(${1:from}, ${2:to})',
+    slice: 'slice(${1:start}, ${2:end})',
+    indexOf: 'indexOf(${1:value})',
+    includes: 'includes(${1:value})'
+  };
+
+  /* เดาว่าตัวแปรเป็นอะไร จากรูปแบบที่เขียนมัก
+     ครอบคลุมรูปแบบที่เจอบ่อยในโจทย์ของเว็บนี้ เช่น JSON.parse(...) แล้วเอาไปวนต่อ
+     เรียงจากเฉพาะเจาะจงไปกว้าง เพื่อให้ได้ผลที่เจาะจงที่สุดก่อน */
+  const TYPE_RULES = [
+    ['\\bJSON\\.parse\\s*\\(', 'Array'],
+    ['\\bnew\\s+Map\\b', 'Map'],
+    ['\\bnew\\s+Set\\b', 'Set'],
+    ['\\bArray\\.from\\s*\\(', 'Array'],
+    ['\\bObject\\.(?:keys|values|entries)\\s*\\(', 'Array'],
+    ['\\b(?:fs\\.)?readFileSync\\s*\\(', 'String'],
+    ['\\.trim\\s*\\(', 'String'],
+    ['\\.toString\\s*\\(', 'String'],
+    ['\\.split\\s*\\(', 'String'],
+    ['\\.join\\s*\\(', 'String'],
+    ['\\bString\\s*\\(', 'String'],
+    ['\\bNumber\\s*\\(', 'Number'],
+    ['^\\s*[\'\"`]', 'String'],
+    ['\\[[^\\]]*\\]\\s*$', 'Array'],
+    ['\\{[^}]*\\}\\s*$', 'Object']
+  ];
 
   /* ------------------------- syntax highlighting -------------------------
      ใช้ sticky regex ทั้งหมด ไม่ slice สตริงใหม่ในทุก token
@@ -797,6 +872,10 @@
       while ((m = destr.exec(src))){
         for (const nm of CodeEditor._params(m[1])) add(nm, 'var', 'ตัวแปร', false);
       }
+      /* 2b) ตัวแปรที่ assign โดยลืมเขียน let/const (ใน JS คือ global)
+             นักเรียนลืมบ่อย ถ้าไม่จับไว้จะไม่เห็นตัวแปรของตัวเองเลย */
+      const bare = /^[ \t]*([A-Za-z_$][\w$]*)[ \t]*=(?!=)/gm;
+      while ((m = bare.exec(src))) add(m[1], 'var', 'ควรใส่ let นำหน้า', false);
 
       /* 3) ชื่อฟังก์ชันที่ประกาศไว้ */
       const fns = /\bfunction\s+([A-Za-z_$][\w$]*)/g;
@@ -810,29 +889,43 @@
       return items;
     }
 
-    /* ชุดวิธีที่ควรแนะนำหลังจุด เช่น nums. -> push/pop/... */
+    /* เดาชนิดของตัวแปรจากรูปแบบที่ประกาศไว้ เช่น const x = JSON.parse(s) -> Array */
+    _typeOf(name){
+      /* ชื่อที่พิมพ์ตามจุดอาจไม่ใช่ชื่อตัวแปร (เช่น Object.keys(bU).)
+         ต้องเป็นชื่อระบุตัวแปรเท่านั้น ไม่งั้น regex จะพัง */
+      if (!/^[A-Za-z_$][\w$]*$/.test(name)) return null;
+      const v = this.ta.value;
+      const re = new RegExp('(?:const|let|var)\\s+' + name + '\\s*=\\s*([^;\\n]*)', 'g');
+      const m = re.exec(v);
+      if (!m) return null;
+      const rhs = m[1];
+      for (const [pat, kind] of TYPE_RULES){
+        if (new RegExp(pat).test(rhs)) return kind;
+      }
+      return null;
+    }
+
+    /* ชุดวิธีที่ควรแนะนำหลังจุด เช่น Math. -> floor, nums. -> push */
     _memberItems(prefix){
       const owner = prefix.replace(/\.$/, '');
       const out = [];
       const seen = new Set();
-      const push = (arr, kind) => {
-        for (const m of arr) if (!seen.has(m)){ seen.add(m); out.push({ label: m, kind: kind, detail: '', hot: false }); }
+      const push = (arr, kind, detail) => {
+        for (const m of arr){
+          if (seen.has(m)) continue;
+          seen.add(m);
+          const snip = METHOD_SNIPPET[m];
+          out.push({ label: m, kind: kind, detail: detail || (snip ? 'มีโครงสำเร็จ' : ''), hot: false, snippet: snip });
+        }
       };
-      if (/^(console|JSON|Math|Number|parseInt|parseFloat|isNaN|isFinite|require)$/.test(owner)) return out;
-      const k = OWNER_KIND[owner];
-      if (k) push(METHODS[k], 'meth');
-      else {
-        /* เดาจากชื่อที่ประกาศไว้ว่าเป็น Array/String/Map/Set หรือเปล่า */
-        const v = this.ta.value;
-        const re = new RegExp('(?:const|let|var)\\s+' + owner + '\\s*=\\s*\\[', 'g');
-        if (re.test(v)) push(METHODS['Array'], 'meth');
-        const rs = new RegExp('(?:const|let|var)\\s+' + owner + "\\s*=\\s*(?:new Map|'|\\\")", 'g');
-        if (rs.test(v)) push(METHODS['Map'], 'meth');
-        const rset = new RegExp('(?:const|let|var)\\s+' + owner + '\\s*=\\s*new Set', 'g');
-        if (rset.test(v)) push(METHODS['Set'], 'meth');
-        const rr = new RegExp('(?:const|let|var)\\s+' + owner + "\\s*=\\s*'", 'g');
-        if (rr.test(v)) push(METHODS['String'], 'meth');
-      }
+
+      /* 1) namespace ที่รู้จัก เช่น Math. console. JSON. — ต้องเจอก่อนเสมอ */
+      if (STATIC[owner]) { push(STATIC[owner], 'fn'); return out; }
+      if (OWNER_KIND[owner]) { push(METHODS[OWNER_KIND[owner]], 'meth'); return out; }
+
+      /* 2) เดาจากรูปแบบที่ประกาศไว้ */
+      const kind = this._typeOf(owner);
+      if (kind && METHODS[kind]) { push(METHODS[kind], 'meth'); return out; }
       return out;
     }
 
@@ -868,6 +961,7 @@
       for (const it of this._scopeItems(caret)) if (it.label.toLowerCase().startsWith(q)) items.push(it);
 
       const snipLabels = new Set(Object.keys(SNIPPETS));
+      for (const g of GLOBALS) if (g.toLowerCase().startsWith(q) && !snipLabels.has(g)) items.push({ label: g, kind: 'glb', detail: 'ค่าคงที่' });
       for (const k of KEYWORDS) if (k.toLowerCase().startsWith(q) && !snipLabels.has(k)) items.push({ label: k, kind: 'kw' });
       for (const s of Object.keys(SNIPPETS)) if (s.startsWith(q)) items.push({ label: s, kind: 'snip', snippet: SNIPPETS[s] });
       for (const b of BUILTINS) if (b.toLowerCase().startsWith(q)) items.push({ label: b, kind: 'fn' });
@@ -990,17 +1084,22 @@
   }
 
   function fillSnippet(tpl) {
+    const SENTINEL = '\u0001';   // ใช้แทนตำแหน่งที่จะวางเคอร์เซอร์ชั่วคราว
     let out = '';
-    let zero = -1;
     const re = /\$\{(\d+)(?::([^}]*))?\}/g;
     let m, last = 0;
     while ((m = re.exec(tpl))) {
       out += tpl.slice(last, m.index);
-      if (m[1] === '0') zero = out.length;
+      if (m[1] === '0') out += SENTINEL;
       else out += m[2] === undefined ? '' : m[2];
       last = m.index + m[0].length;
     }
     out += tpl.slice(last);
+    /* เทมเพลตเขียนด้วย \t แต่ตัวแก้ไขย่อด้วยช่องว่าง 4 ต้องแปลงให้ตรงกัน
+       แปลงก่อนหาตำแหน่งเคอร์เซอร์ ไม่งั้นตำแหน่งจะเลื่อนผิด */
+    out = out.replace(/\t/g, INDENT);
+    const zero = out.indexOf(SENTINEL);
+    if (zero >= 0) out = out.slice(0, zero) + out.slice(zero + 1);
     return { text: out, zero: zero };
   }
 
@@ -1011,8 +1110,9 @@
     if (i.kind === 'fn') return 3;
     if (i.kind === 'snip') return 4;
     if (i.kind === 'meth') return 4;
-    if (i.kind === 'kw') return 5;
-    return 6;
+    if (i.kind === 'glb') return 5;
+    if (i.kind === 'kw') return 6;
+    return 7;
   }
 
   root.CodeEditor = Editor;

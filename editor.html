@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&family=Noto+Sans+Thai:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="js/theme.css?v=20">
+<link rel="stylesheet" href="js/theme.css?v=31">
 <style>
 /* ============ LAYOUT 3 ส่วน ============ */
 .app{position:relative;z-index:1;display:flex;flex-direction:column;height:100vh;overflow:hidden}
@@ -90,6 +90,55 @@
 .sum{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:11.5px;padding:2px 2px 6px}
 .sum .ok{color:var(--ok);font-weight:700} .sum .no{color:var(--err);font-weight:700} .sum .dim{color:var(--fg3)}
 
+/* ===== หน้าสรุปคะแนนหลัง Submit ===== */
+.finish{padding:16px 14px 14px;text-align:center;border-bottom:1px solid var(--line)}
+.finish.pass{background:linear-gradient(180deg,rgba(63,185,80,.10),transparent 78%)}
+.finish.fail{background:linear-gradient(180deg,rgba(210,153,34,.10),transparent 78%)}
+.fin-badge{width:46px;height:46px;margin:0 auto 8px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  background:rgba(63,185,80,.15);color:var(--ok);border:1px solid rgba(63,185,80,.4)}
+.fin-badge svg{width:26px;height:26px}
+.finish.fail .fin-badge{background:rgba(210,153,34,.15);border-color:rgba(210,153,34,.4);color:var(--warn)}
+.fin-tt{font-size:14px;font-weight:700;letter-spacing:.1px}
+.fin-score{font-family:var(--mono);font-size:38px;font-weight:800;line-height:1.15;margin:2px 0 1px;
+  color:var(--ok);letter-spacing:-1px}
+.finish.fail .fin-score{color:var(--warn)}
+.fin-score span{font-size:16px;font-weight:600;color:var(--fg3);letter-spacing:0}
+.fin-grade{font-size:12px;color:var(--fg2);margin-bottom:12px}
+.fin-acts{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.fin-acts .btn{text-decoration:none}
+.fin-toggle{margin:8px 12px 2px;padding:6px 10px;border-radius:8px;cursor:pointer;
+  font-size:11.5px;color:var(--fg3);text-align:center;user-select:none;
+  border:1px dashed var(--line);transition:color .12s,border-color .12s}
+.fin-toggle:hover{color:var(--acc);border-color:var(--acc)}
+.fin-detail{display:none;padding-top:0}
+.fin-detail.show{display:block;flex:1;min-height:0;overflow:auto}
+.fin-detail .tc:first-child{border-top:1px solid var(--line)}
+/* กางรายละเอียดแล้ว ให้หน้าสรุปหยุดขยายแล้วเลื่อนอยู่ตรงนั้น */
+.panel.expanded > .pbody{flex:none;overflow:visible}
+.nav .btn.back{color:var(--fg2);text-decoration:none}
+.nav .btn.back:hover{color:var(--fg);border-color:var(--fg3)}
+
+/* แถบบนกว้างธรรมชาติ ~880px ถ้าแคบกว่านั้นปุ่มจะดันจนล้น
+   จึงตัดคำในปุ่มออก เหลือไอคอนล้วน (ยังมี title อธิบายตอนเอามาชี้)
+   จอเล็กกว่านั้นอีก ตัดชื่อเว็บออก เหลือเครื่องหมาย */
+@media (max-width:880px){
+  .nav .btn .bl{display:none}
+  .nav .btn{padding-left:9px;padding-right:9px}
+  .nav .btn.back span{display:none}
+}
+@media (max-width:520px){
+  .nav .brand-txt{display:none}
+}
+/* จอเล็กกว่า ~440px ทุกอย่างยังไม่พอด้วย แม้ตัดคำในปุ่มหมดแล้ว
+   ตัดปุ่มส่งออก/นำเข้าออก (เป็นการย้ายไฟล์ บนมือถือไม่มีประโยชน์อยู่แล้ว
+   งานยังบันทึกในเครื่องอัตโนมัติ) และลดช่องว่างให้พอดี */
+@media (max-width:440px){
+  .nav{padding:0 10px;gap:6px}
+  .nav #btnExport, .nav #btnImport, .nav .nav-div{display:none}
+  .nav .btn.icon, .nav .btn{padding-left:7px;padding-right:7px}
+}
+
 /* debug area */
 .dbgwrap{flex:none;display:none;flex-direction:column;border-top:2px solid var(--pur);background:var(--bg2)}
 .dbgwrap.on{display:flex}
@@ -127,6 +176,10 @@
       </div>
       <div class="brand-txt">Code<b>Practice</b></div>
     </a>
+    <a href="index.html" class="btn back" id="btnHome" title="กลับไปหน้ารายการโจทย์ (งานที่เขียนไว้ยังอยู่ครบ)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 18l-6-6 6-6"/></svg>
+      <span>หน้าหลัก</span>
+    </a>
     <div class="nav-div"></div>
     <div class="pill">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
@@ -144,19 +197,19 @@
     </button>
     <button class="btn" id="btnReset" title="คืนค่าโค้ดเริ่มต้น">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L3 8"/></svg>
-      รีเซ็ต
+      <span class="bl">รีเซ็ต</span>
     </button>
     <button class="btn go" id="btnRun" title="รันตัวอย่างเดียว (Ctrl+Enter)">
       <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 3.5v17l15-8.5z"/></svg>
-      Run Sample
+      <span class="bl">Run Sample</span>
     </button>
     <button class="btn send" id="btnSubmit" title="ตรวจทุก Test Case (Ctrl+Shift+Enter)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
-      Submit
+      <span class="bl">Submit</span>
     </button>
     <button class="btn dbg" id="btnDebug" title="เดินทีละบรรทัด (F5)">
       <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 4l10 8-10 8z"/><rect x="17" y="4" width="3" height="16" rx="1"/></svg>
-      Debug
+      <span class="bl">Debug</span>
     </button>
   </nav>
 
@@ -237,6 +290,7 @@
             <span class="tag" id="subTag"></span>
           </div>
           <div class="pbody" id="subBody"></div>
+          <div class="pbody fin-detail" id="subDetail"></div>
         </div>
       </div>
 
@@ -279,9 +333,9 @@
 </div>
 
 <input type="file" id="fileImport" accept="application/json,.json" class="vh">
-<script src="problems/problems.js?v=20"></script>
-<script src="js/interpreter.js?v=20"></script>
-<script src="js/editor.js?v=20"></script>
-<script src="js/app.js?v=20"></script>
+<script src="problems/problems.js?v=31"></script>
+<script src="js/interpreter.js?v=31"></script>
+<script src="js/editor.js?v=31"></script>
+<script src="js/app.js?v=31"></script>
 </body>
 </html>
