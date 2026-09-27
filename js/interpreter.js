@@ -490,7 +490,9 @@
         }
         let args = [];
         if (at('(')) args = parseArguments();
-        return node('New', ln, { callee, args });
+        /* ต้องต่อ postfix ต่อได้ ไม่งั้น new Array(n).fill(0) จะตัด .fill(0) ทิ้ง
+           (เช่นเดียวกับ foo().bar() ที่ต้องผ่าน parsePostfix) */
+        return parseMemberOnly(node('New', ln, { callee, args }));
       }
       let e = parsePostfix();
       return e;
@@ -1223,10 +1225,25 @@
         e.line = line;
         return e;
       }
-      if (C === Array){ return args.slice(); }
+      if (C === Array){
+        /* new Array(n) = อาร์เรย์ยาว n (ไม่ใช่อาร์เรย์ที่มี n เป็นสมาชิก)
+           new Array(1,2) = [1,2]  ต่างจาก Array(1,2) ที่คืน [2] ใน JS จริง */
+        if (args.length === 1 && typeof args[0] === 'number'){
+          const len = args[0];
+          if (!Number.isInteger(len) || len < 0) throw RuntimeError('RangeError', 'Invalid array length', line);
+          return new Array(len);
+        }
+        return args.slice();
+      }
       if (C === Object) return Object.assign({}, ...args.filter(a => a && typeof a === 'object'));
-      if (C === Map) return new Map(args.map(a => [a[0], a[1]]));
-      if (C === Set) return new Set(args);
+      /* new Set([1,2]) ต้องกระจาย array ออกเป็นสมาชิกแยก
+         ถ้าไม่กระจาย Set จะมี array นั้นเป็นสมาชิกเดียว (ต่างจาก JS จริง) */
+      const spreadArgs = a => (a.length === 1 && Array.isArray(a[0]) ? a[0] : a);
+      if (C === Map){
+        const pairs = spreadArgs(args).map(a => [a[0], a[1]]);
+        return new Map(pairs);
+      }
+      if (C === Set) return new Set(spreadArgs(args));
       if (C === String) return args.map(a => toStr(a)).join('');
       if (C === Number) return toNum(args[0]);
       if (C instanceof InterpFn){
@@ -1434,23 +1451,30 @@
       sort: function* (arr, args, env, line) {
         const cmp = args[0];
         if (cmp === undefined){ arr.sort((a, b) => compare(a, b)); return arr; }
-        /* merge sort เพื่อให้ comparator ที่เป็น user function ทำงานแบบ step ได้ */
-        const buf = arr.slice();
-        async function* msort(lo, hi){
+        /* merge sort เพื่อให้ comparator ที่เป็น user function ทำงานแบบ step ได้
+           ต้องแยก buffer อ่าน (src) กับ buffer เขียน (dst)
+           ถ้าเขียนทับ src ระหว่าง merge ค่าที่ยังไม่ได้อ่านจะถูกทับหาย */
+        const n = arr.length;
+        if (n < 2) return arr;
+        const src = arr.slice();
+        const dst = new Array(n);
+        function* msort(lo, hi){
           if (hi - lo <= 1) return;
           const mid = (lo + hi) >> 1;
           yield* msort(lo, mid);
           yield* msort(mid, hi);
           let i = lo, j = mid, k = lo;
           while (i < mid && j < hi){
-            const c = yield* callFunction(cmp, [buf[i], buf[j]], line);
-            if (c <= 0) buf[k++] = buf[i++]; else buf[k++] = buf[j++];
+            const c = yield* callFunction(cmp, [src[i], src[j]], line);
+            if (c <= 0) dst[k++] = src[i++]; else dst[k++] = src[j++];
           }
-          while (i < mid) buf[k++] = buf[i++];
-          while (j < hi) buf[k++] = buf[j++];
+          while (i < mid) dst[k++] = src[i++];
+          while (j < hi) dst[k++] = src[j++];
+          /* คัดลอกกลับ เพื่อให้ระดับบนอ่านค่าที่ merge แล้วเห็น */
+          for (let x = lo; x < hi; x++) src[x] = dst[x];
         }
-        yield* msort(0, arr.length);
-        for (let i = 0; i < arr.length; i++) arr[i] = buf[i];
+        yield* msort(0, n);
+        for (let i = 0; i < n; i++) arr[i] = src[i];
         return arr;
       }
     };
@@ -1517,13 +1541,17 @@
     GLOBAL.parseFloat = (s) => BUILTINS.parseFloat.fn([s]);
     GLOBAL.isNaN = (v) => isNaN(toNum(v));
     GLOBAL.isFinite = (v) => isFinite(toNum(v));
-    GLOBAL.String = function String_(x){ return x === undefined ? '' : toStr(x); };
+    /* String(undefined) ต้องได้ "undefined" ตามมาตรฐาน JS */
+    GLOBAL.String = function String_(x){ return toStr(x); };
     GLOBAL.String.fromCharCode = String.fromCharCode;
     GLOBAL.String.fromCodePoint = String.fromCodePoint;
     GLOBAL.Boolean = Boolean;
     GLOBAL.Array = Array;
     GLOBAL.Array.isArray = Array.isArray;
-    GLOBAL.Array.from = (a) => Array.from(a == null ? [] : a);
+    /* ต้องเก็บของจริงไว้ก่อน ไม่งั้นข้างในจะเรียกตัวเองวนไม่จบ
+       เพราะ GLOBAL.Array.from ถูกเขียนทับไปแล้ว */
+    const realArrayFrom = Array.from;
+    GLOBAL.Array.from = (a, f) => realArrayFrom(a == null ? [] : toPlain(a));
     GLOBAL.Array.of = (...a) => a;
     GLOBAL.Object = Object.assign(function Object_(){}, {
       keys: (o) => o == null ? [] : Object.keys(toPlain(o)),
