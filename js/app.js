@@ -176,7 +176,7 @@
      บันทึกไว้ว่าเปิดถึงระดับไหนและดูเฉลยแบบไหนไปแล้ว
      เพื่อให้ครูเห็นว่าโจทย์ไหนนักเรียนต้องพึ่งคำใบ้ถึงระดับสุดท้าย */
   const HINT_KEY = 'cp_hints_v1';
-  const HINT_SRC = 'problems/solutions.js?v=56';
+  const HINT_SRC = 'problems/solutions.js?v=58';
   let hintData = null;      // window.HINTS
   let hintLoad = null;      // Promise กำลังโหลด
   let hintOpenLv = [];      // ระดับที่เปิดค้างไว้ในรอบนี้

@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&family=Noto+Sans+Thai:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="js/theme.css?v=56">
+<link rel="stylesheet" href="js/theme.css?v=58">
 <style>
 /* ============ LAYOUT 3 ส่วน ============ */
 .app{position:relative;z-index:1;display:flex;flex-direction:column;height:100vh;overflow:hidden}
@@ -127,11 +127,9 @@
   .nav .btn{padding-left:9px;padding-right:9px}
   .nav .btn.back span{display:none}
 }
-/* จอแคบลงอีก: ตัดเส้นคั่นในแถบบนออก และลดช่องว่างให้พอดี
-   (ปุ่มคำใบ้เพิ่มเข้ามา ทำให้ช่องว่างเต็มขึ้นทุกด้าน) */
+/* จอแคบลงอีก: ลดช่องว่างให้พอดี (ปุ่มคำใบ้เพิ่มเข้ามา ทำให้ช่องว่างเต็มขึ้นทุกด้าน) */
 @media (max-width:700px){
   .nav{padding:0 12px;gap:5px}
-  .nav .nav-div{display:none}
   .nav .btn{padding-left:8px;padding-right:8px}
 }
 /* ถึงขั้นที่ชื่อเว็บเริ่มกินพื้นที่มากกว่าปุ่มที่จำเป็น — เหลือไว้แค่ไอคอน */
@@ -170,18 +168,23 @@
   .sidebg.on{display:block;position:fixed;left:0;top:0;right:0;bottom:0;
        background:rgba(0,0,0,.5);z-index:25}
   .nav .pill{display:none}
+  /* เส้นคั่นมีไว้คั่นชื่อโจทย์เท่านั้น พอซ่อนชื่อโจทย์แล้วก็ไม่มีความหมาย
+     ตัดทิ้งแล้วได้พื้นที่กลับมาให้ปุ่มอื่น */
+  .nav .nav-div{display:none}
 }
 
-  /* ================= ปุ่มคำใบ้ในแถบบน ================= */
-  .nav .btn.hint{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 42%,transparent)}
-  .nav .btn.hint:hover{background:color-mix(in srgb,var(--warn) 12%,transparent);
+  /* ================= ปุ่มคำใบ้ในแถบบน =================
+     ชื่อคลาสต้องเป็น "hbtn" ไม่ใช่ "hint" — .hint ถูกใช้ไปแล้วกับกล่องข้อความ
+     ใน sidebar ซึ่งมี margin-top:8px ถ้าชนกันจะทำให้ปุ่มต่ำกว่าปุ่มอื่นทันที */
+  .nav .btn.hbtn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 42%,transparent)}
+  .nav .btn.hbtn:hover{background:color-mix(in srgb,var(--warn) 12%,transparent);
        border-color:var(--warn);color:var(--warn)}
-  .nav .btn.hint.on{background:color-mix(in srgb,var(--warn) 18%,transparent);
+  .nav .btn.hbtn.on{background:color-mix(in srgb,var(--warn) 18%,transparent);
        border-color:var(--warn);color:var(--warn)}
   /* จุดบอกว่าเคยเปิดระดับไหนไปแล้ว */
   .hintdot{display:none;position:absolute;top:4px;right:4px;width:7px;height:7px;
        border-radius:50%;background:var(--warn);box-shadow:0 0 0 2px var(--bg2)}
-  .nav .btn.hint.used .hintdot{display:block}
+  .nav .btn.hbtn.used .hintdot{display:block}
   .nav .btn{position:relative}
 
   /* ================= แผงคำใบ้ ================= */
@@ -295,7 +298,7 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L3 8"/></svg>
       <span class="bl">รีเซ็ต</span>
     </button>
-    <button class="btn hint" id="btnHint" title="เปิดคำใบ้ 3 ระดับ + เฉลยหลายแบบ (Ctrl+H)">
+    <button class="btn hbtn" id="btnHint" title="เปิดคำใบ้ 3 ระดับ + เฉลยหลายแบบ (Ctrl+H)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg>
       <span class="bl">คำใบ้</span>
       <span class="hintdot" id="hintDot"></span>
@@ -460,9 +463,9 @@
   </div>
 </aside>
 
-<script src="problems/problems.js?v=56"></script>
-<script src="js/interpreter.js?v=56"></script>
-<script src="js/editor.js?v=56"></script>
-<script src="js/app.js?v=56"></script>
+<script src="problems/problems.js?v=58"></script>
+<script src="js/interpreter.js?v=58"></script>
+<script src="js/editor.js?v=58"></script>
+<script src="js/app.js?v=58"></script>
 </body>
 </html>
