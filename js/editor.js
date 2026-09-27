@@ -12,10 +12,34 @@
     'continue','switch','case','default','try','catch','finally','throw','new','typeof','instanceof',
     'in','of','delete','void','this','null','undefined','true','false','async','await','class','extends','super'];
 
-  const BUILTINS = ['console.log','console.error','console.warn','JSON.stringify','JSON.parse',
-    'Math.floor','Math.ceil','Math.round','Math.abs','Math.sqrt','Math.min','Math.max','Math.pow',
-    'Object.keys','Object.values','Object.entries','Array.isArray','Number.isInteger',
-    'parseInt','parseFloat','isNaN','String','Number','Boolean','Array','Object','Map','Set','require'];
+  const BUILTINS = ['console.log','console.error','console.warn','console.info','console.debug',
+    'JSON.stringify','JSON.parse','JSON.keys',
+    'Math.floor','Math.ceil','Math.round','Math.abs','Math.sqrt','Math.pow','Math.min','Math.max',
+    'Math.trunc','Math.sign','Math.log','Math.exp','Math.hypot','Math.random','Math.PI','Math.E',
+    'Object.keys','Object.values','Object.entries','Object.assign','Object.freeze',
+    'Array.isArray','Array.from','Array.of',
+    'Number.isInteger','Number.isFinite','Number.isNaN','Number.parseInt','Number.parseFloat',
+    'Number.MAX_SAFE_INTEGER','Number.MIN_SAFE_INTEGER',
+    'parseInt','parseFloat','isNaN','isFinite',
+    'String','Number','Boolean','Array','Object','Map','Set','require'];
+
+  /* วิธีของ Array / String / Map / Set — แนะนำตอนพิมพ์หลังจุด */
+  const METHODS = {
+    'Array': ['push','pop','shift','unshift','slice','splice','concat','join','indexOf',
+      'lastIndexOf','includes','reverse','find','findIndex','filter','map','forEach','reduce',
+      'some','every','sort','flat','fill','at','keys','values','entries','length'],
+    'String': ['length','charAt','charCodeAt','indexOf','lastIndexOf','includes','startsWith',
+      'endsWith','slice','substring','substr','split','replace','replaceAll','toUpperCase',
+      'toLowerCase','trim','trimStart','trimEnd','repeat','padStart','padEnd','concat'],
+    'Map': ['get','set','has','delete','size','keys','values','entries','clear','forEach'],
+    'Set': ['add','has','delete','size','keys','values','entries','clear','forEach'],
+    'Object': ['keys','values','entries','assign','freeze','hasOwnProperty']
+  };
+  /* ชื่อก่อนจุดที่เดาว่าเป็นอะไร เพื่อเลือกชุดวิธีให้เหมาะ */
+  const OWNER_KIND = {
+    console: null, JSON: 'Object', Math: null, Object: 'Object',
+    Map: 'Map', Set: 'Set', WeakMap: 'Map', WeakSet: 'Set'
+  };
 
   const SNIPPETS = {
     'for': 'for (let ${1:i} = 0; ${1:i} < ${2:len}; ${1:i}++) {\n\t${0}\n}',
@@ -31,7 +55,11 @@
     'switch': 'switch (${1:val}) {\n\tcase ${2:a}:\n\t\t${3}\n\t\tbreak;\n\tdefault:\n\t\t${0}\n}'
   };
 
+  /* ตัวเปิด -> ตัวปิดที่ต้องใส่ให้อัตโนมัติ
+     สำคัญ: กดอัตโนมัติได้เฉพาะตัวเปิด ถ้ากดตัวปิดต้อง "ข้ามผ่าน" ไม่ใช่เพิ่มคู่ใหม่ */
   const PAIRS = { '(': ')', '[': ']', '{': '}', '"': '"', "'": "'", '`': '`' };
+  const CLOSERS = { ')': 1, ']': 1, '}': 1, '"': 1, "'": 1, '`': 1 };
+  const INDENT = '    ';
 
   /* ------------------------- syntax highlighting -------------------------
      ใช้ sticky regex ทั้งหมด ไม่ slice สตริงใหม่ในทุก token
@@ -173,9 +201,17 @@
       this._winStart = -1;
       this._text = null;
       this.onChange = null;    // ให้ภายนอกเข้ามาแจ้งตอนผู้ใช้แก้โค้ด (ใช้บันทึกอัตโนมัติ)
+      this.undoStack = [];
+      this.redoStack = [];
+      this._hist = null;
+      this._lastWasSimple = false;
+      this._simpleNext = false;
 
       this.ta.addEventListener('input', () => {
         this._idxDirty = true; this._idxLen = -1;
+        /* จำว่ากดอะไรมา เพื่อรู้ว่าควรรวมกับ undo ก้าวก่อนหรือไม่ */
+        this._pushHistory(this._simpleNext);
+        this._simpleNext = false;
         this.render();
         this._maybeAutocomplete();
         if (this.onChange) this.onChange();
@@ -187,6 +223,7 @@
       this.gutter.addEventListener('mousedown', e => this._gutterClick(e));
       this._measure(true);
       this.render();
+      this._hist = this._snap();
     }
 
     /* ---------- public ---------- */
@@ -205,8 +242,11 @@
       this.ta.value = v == null ? '' : String(v);
       this.ta.setSelectionRange(0, 0);
       this._idxDirty = true; this._idxLen = -1;
+      this.undoStack.length = 0;
+      this.redoStack.length = 0;
       this._measure();
       this.render();
+      this._hist = this._snap();
     }
     focus(){ this.ta.focus(); }
 
@@ -395,10 +435,64 @@
 
     /* ---------- editing helpers ---------- */
     _sel(){ return [this.ta.selectionStart, this.ta.selectionEnd]; }
-    _replace(a, b, text){
+    _snap(){ return { value: this.ta.value, start: this.ta.selectionStart, end: this.ta.selectionEnd }; }
+
+    /* ---------- undo / redo ----------
+       เขียนค่าเข้า textarea ตรง ๆ เท่ากับล้าง undo ของเบราว์เซอร์ทิ้ง
+       ต้องเก็บประวัติเอง แล้วรวมการพิมพ์ติด ๆ กันเป็นก้าวเดียว */
+    _pushHistory(simple){
+      const before = this._hist;
+      const now = Date.now();
+      if (before && before.value !== this.ta.value){
+        const top = this.undoStack[this.undoStack.length - 1];
+        /* รวมก้าวได้ก็ต่อเมื่อเป็นการพิมพ์ธรรมดาต่อจากการพิมพ์ธรรมดา
+         ถ้ามี Enter/Tab/ลบ คั่นไว้ ต้องเริ่มกลุ่มใหม่เสมอ
+         ไม่งั้นกด Ctrl+Z ครั้งเดียวจะย้อนหายไปทั้งบรรทัด */
+        const canGroup = simple && this._lastWasSimple && top && (now - top.time) < 700;
+        if (canGroup) top.time = now;
+        else {
+          this.undoStack.push({ value: before.value, start: before.start, end: before.end, time: now });
+          if (this.undoStack.length > 300) this.undoStack.shift();
+        }
+        this.redoStack.length = 0;
+      }
+      this._lastWasSimple = !!simple;
+      this._hist = this._snap();
+    }
+
+    _restore(s){
+      this.ta.value = s.value;
+      const n = s.value.length;
+      this.ta.setSelectionRange(Math.min(s.start, n), Math.min(s.end, n));
+      this._idxDirty = true; this._idxLen = -1;
+      this._hist = this._snap();
+      this.render();
+      this._revealCaret();
+    }
+
+    undo(){
+      const s = this.undoStack.pop();
+      if (!s) return;
+      this.redoStack.push(this._snap());
+      this._restore(s);
+    }
+    redo(){
+      const s = this.redoStack.pop();
+      if (!s) return;
+      this.undoStack.push(this._snap());
+      this._restore(s);
+    }
+
+    _replace(a, b, text, simple){
       this.ta.setSelectionRange(a, b);
-      if (!this.ta.setRangeText) return;
-      this.ta.setRangeText(text, a, b, 'end');
+      if (this.ta.setRangeText){
+        this.ta.setRangeText(text, a, b, 'end');
+      } else {
+        const v = this.ta.value;
+        this.ta.value = v.slice(0, a) + text + v.slice(b);
+        this.ta.setSelectionRange(a + text.length, a + text.length);
+      }
+      this._pushHistory(simple === true);
       this.render();
     }
 
@@ -420,24 +514,42 @@
     }
 
     _onKey(e){
+      /* จำไว้ก่อนว่าเป็นการพิมพ์ธรรมดา (เอาไปตัดสินใจรวมก้าว undo) */
+      const plainType = !e.ctrlKey && !e.metaKey && !e.altKey && e.key.length === 1;
+      this._simpleNext = plainType;
+
       if (this.ac.classList.contains('on')){
         if (e.key === 'ArrowDown'){ e.preventDefault(); this._acMove(1); return; }
         if (e.key === 'ArrowUp'){ e.preventDefault(); this._acMove(-1); return; }
         if (e.key === 'Enter' || e.key === 'Tab'){ e.preventDefault(); this._acAccept(); return; }
         if (e.key === 'Escape'){ e.preventDefault(); this.closeAC(); return; }
       }
+      /* ต้องปิดกั้นเสมอ ไม่งั้น browser จะ undo ทับซ้อนกับของเรา */
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z'){ e.preventDefault(); this.undo(); return; }
+      if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y'
+          || (e.shiftKey && e.key.toLowerCase() === 'z'))){ e.preventDefault(); this.redo(); return; }
       if ((e.ctrlKey || e.metaKey) && e.key === '/'){ e.preventDefault(); this._toggleComment(); return; }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd'){ e.preventDefault(); this._dupLine(); return; }
-      if (e.key === 'Tab'){ e.preventDefault(); this._tab(e.shiftKey); return; }
-      if (e.key === 'Enter'){ e.preventDefault(); this._newline(); return; }
-      if (PAIRS[e.key] && this.ta.selectionStart === this.ta.selectionEnd){
-        const nxt = this.ta.value[this.ta.selectionStart] || '';
-        if (!/[\w$]/.test(nxt)){
-          e.preventDefault();
+      if (e.key === 'Tab'){ e.preventDefault(); this._tab(e.shiftKey); this._simpleNext = false; return; }      if (e.key === 'Enter'){ e.preventDefault(); this._newline(); this._simpleNext = false; return; }
+      if (PAIRS[e.key] || CLOSERS[e.key]){
+        if (this.ta.selectionStart === this.ta.selectionEnd){
           const p = this.ta.selectionStart;
-          this._replace(p, p, e.key + PAIRS[e.key]);
-          this.ta.selectionStart = this.ta.selectionEnd = p + 1;
-          return;
+          /* ข้ามผ่านวงเล็บปิด: ถ้าหน้าเคอร์เซอร์มีตัวเดียวกันอยู่
+             แปลว่าเป็นตัวที่ auto-close ใส่ไว้ ให้ขยับผ่านไป ไม่ต้องเพิ่มอีกอัน */
+          if (CLOSERS[e.key]){
+            if (this.ta.value[p] === e.key){
+              e.preventDefault();
+              this.ta.selectionStart = this.ta.selectionEnd = p + 1;
+              this._simpleNext = false;
+              return;
+            }
+          } else if (!/[\w$]/.test(this.ta.value[p] || '')){
+            e.preventDefault();
+            this._replace(p, p, e.key + PAIRS[e.key], true);
+            this.ta.selectionStart = this.ta.selectionEnd = p + 1;
+            this._simpleNext = false;
+            return;
+          }
         }
       }
       if (e.key === 'Backspace'){
@@ -448,6 +560,19 @@
           if (PAIRS[before] && PAIRS[before] === after){
             e.preventDefault();
             this._replace(p - 1, p + 1, '');
+            this._simpleNext = false;
+            return;
+          }
+          /* ถ้าหน้าเคอร์เซอร์เป็นช่องว่างล้วนตั้งแต่ต้นบรรทัด
+             ให้ถอยทีเดียวทั้งระดับ (4 ช่อง) ไม่ใช่ทีละช่อง */
+          const ls = this.ta.value.lastIndexOf('\n', p - 1) + 1;
+          if (p > ls && /^[ ]+$/.test(this.ta.value.slice(ls, p))){
+            e.preventDefault();
+            const col = p - ls;
+            const rem = col % INDENT.length;
+            const keep = rem === 0 ? col - INDENT.length : col - rem;
+            this._replace(ls, p, ' '.repeat(Math.max(0, keep)));
+            this._simpleNext = false;
             return;
           }
         }
@@ -458,7 +583,19 @@
       const v = this.ta.value;
       const [a, b] = this._sel();
       if (a === b && !shift){
-        this._replace(a, b, '    ');
+        /* ถ้าจากเคอร์เซอร์ไปจนสิ้นบรรทัดมีแต่ช่องว่าง
+           ให้เติมให้ตรงระดับ (tab stop) แทนที่จะบวก 4 ตลอด
+           กด Tab ซ้ำจะเดิน 0 -> 4 -> 8 ไม่ใช่ 0 -> 4 -> 8 -> 12 แบบเลื่อนไม่ได้ */
+        const ln = this._currentLine();
+        const headBlank = ln.text.slice(0, a - ln.start).trim() === '';
+        const tailBlank = /^[ \t]*$/.test(v.slice(a, ln.end));
+        if (headBlank && tailBlank){
+          const col = a - ln.start;
+          const add = INDENT.length - (col % INDENT.length);
+          this._replace(a, b, ' '.repeat(add), true);
+          return;
+        }
+        this._replace(a, b, INDENT, true);
         return;
       }
       const ls = v.lastIndexOf('\n', a - 1) + 1;
@@ -474,9 +611,9 @@
           totalDelta -= cut;
           return ln.slice(cut);
         }
-        if (i === 0) firstDelta = 4;
-        totalDelta += 4;
-        return '    ' + ln;
+        if (i === 0) firstDelta = INDENT.length;
+        totalDelta += INDENT.length;
+        return INDENT + ln;
       }).join('\n');
       this._replace(ls, le, out);
       this.ta.selectionStart = Math.max(0, ls + firstDelta);
@@ -484,19 +621,37 @@
     }
 
     _newline(){
+      const v = this.ta.value;
+      const [a, b] = this._sel();
       const ln = this._currentLine();
-      const indent = (ln.text.match(/^[ \t]*/) || [''])[0];
-      const before = this.ta.value.slice(0, ln.start).trimEnd();
-      const opens = /[{([]\s*$/.test(before) || /^(for|while|if|else|switch|try|do|function)\b.*[{([]?\s*$/.test(ln.text.trim());
-      const closesNext = /^\s*[}\])]/.test(this.ta.value.slice(ln.end));
-      const ins = '\n' + indent + (opens ? '    ' : '');
-      const [a] = this._sel();
-      this._replace(a, a, ins);
-      if (opens && closesNext){
-        const p = this.ta.selectionStart;
-        this._replace(p, p, '\n' + indent);
-        this.ta.selectionStart = this.ta.selectionEnd = p;
+      const head = ln.text.slice(0, a - ln.start);
+      const isBlank = head.trim() === '';
+      const baseIndent = (ln.text.match(/^[ \t]*/) || [''])[0];
+      const opensBlock = /[{([]\s*$/.test(head);
+
+      /* ถ้าบรรทัดนี้ว่างอยู่แล้ว แปลว่าผู้ใช้เว้นระดับมาเอง (เช่นกด Tab แล้วค่อยกด Enter)
+         ต้องคงระดับนั้นไว้ ไม่ใช่บวกเพิ่มอีกชั้น */
+      const nextIndent = isBlank ? head : (opensBlock ? baseIndent + INDENT : baseIndent);
+
+      /* หาวงเล็บปิดที่อยู่ถัดไปจากเคอร์เซอร์
+         ข้ามช่องว่างได้หนึ่งบรรทัด เพราะเคสปกติคือพิมพ์ { แล้ว auto-close ทิ้ง } ไว้ในบรรทัดเดียวกัน */
+      let j = a;
+      while (j < v.length && (v[j] === ' ' || v[j] === '\t')) j++;
+      if (v[j] === '\n'){
+        j++;
+        while (j < v.length && (v[j] === ' ' || v[j] === '\t')) j++;
       }
+      const hasClose = v[j] === '}' || v[j] === ']' || v[j] === ')';
+
+      if (opensBlock && hasClose){
+        /* แทนที่ตั้งแต่เคอร์เซอร์ถึงหน้าวงเล็บปิด
+           ผลคือบรรทัดใหม่เข้าไปหนึ่งชั้น และวงเล็บปิดไปอยู่บรรทัดถัดไป
+           ที่ระดับเดียวกับบรรทัดที่เปิด block เสมอ */
+        this._replace(a, j, '\n' + nextIndent + '\n' + baseIndent);
+        this.ta.selectionStart = this.ta.selectionEnd = a + 1 + nextIndent.length;
+        return;
+      }
+      this._replace(a, b, '\n' + nextIndent);
     }
 
     _toggleComment(){
@@ -528,23 +683,199 @@
       return { word: m[1], start: p - m[1].length };
     }
 
+    /* หาตำแหน่งวงเล็บปีกกาที่ยังไม่ปิด ณ ตำแหน่งที่กำหนด
+       ข้ามสตริงกับคอมเมนต์ไป ไม่งั้นจะนับผิด */
+    _openBraces(src){
+      const stack = [];
+      let i = 0;
+      const n = src.length;
+      while (i < n){
+        const c = src[i];
+        if (c === '/' && src[i + 1] === '/'){ const e = src.indexOf('\n', i); i = e === -1 ? n : e; continue; }
+        if (c === '/' && src[i + 1] === '*'){ const e = src.indexOf('*/', i + 2); i = e === -1 ? n : e + 2; continue; }
+        if (c === '"' || c === "'" || c === '`'){
+          const q = c; i++;
+          while (i < n){
+            if (src[i] === '\\'){ i += 2; continue; }
+            if (src[i] === q){ i++; break; }
+            i++;
+          }
+          continue;
+        }
+        if (c === '{') stack.push(i);
+        else if (c === '}') stack.pop();
+        i++;
+      }
+      return stack;
+    }
+
+    /* ชื่อตัวแปรที่ประกาศไว้ในรายการพารามิเตอร์ เช่น "a, {b, c}, d = 1, ...rest" */
+    static _params(str){
+      const parts = [];
+      let d = 0, cur = '';
+      for (const ch of str){
+        if (ch === '(' || ch === '[' || ch === '{') d++;
+        else if (ch === ')' || ch === ']' || ch === '}') d--;
+        if (ch === ',' && d === 0){ parts.push(cur); cur = ''; } else cur += ch;
+      }
+      if (cur.trim()) parts.push(cur);
+      const names = [];
+      for (const raw of parts){
+        const s = raw.trim();
+        if (!s) continue;
+        const head = s[0];
+        if (head === '{' || head === '['){
+          const close = head === '{' ? '}' : ']';
+          const inner = s.slice(1, s.lastIndexOf(close));
+          for (const p of inner.split(',')){
+            const t = p.split(':').pop().split('=')[0].trim().replace(/^\.\.\./, '');
+            if (/^[A-Za-z_$][\w$]*$/.test(t)) names.push(t);
+          }
+          continue;
+        }
+        const t = s.replace(/^\.\.\./, '').split('=')[0].trim();
+        if (/^[A-Za-z_$][\w$]*$/.test(t)) names.push(t);
+      }
+      return names;
+    }
+
+    /* รวบรวมสิ่งที่ "ควรขึ้นตอนแท็บตรงนี้"
+       เรียงจากเฉพาะที่สุด: พารามิเตอร์ที่กำลังอยู่ในฟังก์ชัน -> ตัวแปรที่ประกาศแล้ว
+       -> ชื่อฟังก์ชัน -> คีย์เวิร์ด/ที่นิยม -> ตัวในตัว */
+    _scopeItems(caret){
+      const v = this.ta.value;
+      const src = v.slice(0, caret);
+      const items = [];
+      const seen = new Set();
+      const add = (label, kind, detail, hot) => {
+        const k = label + '|' + kind;
+        if (seen.has(k)) return;
+        seen.add(k);
+        items.push({ label, kind, detail: detail || '', hot: !!hot });
+      };
+
+      /* 1) พารามิเตอร์ของฟังก์ชันที่ครอบเคอร์เซอร์อยู่ (เจาะจงที่สุด) */
+      const braces = this._openBraces(src);
+      for (let i = braces.length - 1; i >= 0; i--){
+        const at = braces[i];
+        let c = at - 1;
+        while (c >= 0 && (src[c] === ' ' || src[c] === '\t')) c--;
+
+        /* arrow function: const f = (a, b) => {  ตัวก่อน { คือ > ไม่ใช่ ) */
+        if (src[c] === '>' && src[c - 1] === '='){
+          let q = c - 2;
+          while (q >= 0 && (src[q] === ' ' || src[q] === '\t')) q--;
+          c = (src[q] === ')') ? q : at - 1;
+        }
+
+        /* ย้อนจาก { ต้องเจอ ) ของรายการพารามิเตอร์ก่อนเสมอ
+           ถ้าไม่ใช่แปลว่าไม่ใช่หัวฟังก์ชัน (เช่น if/for/try ที่ตามด้วย { ตรง ๆ) */
+        if (src[c] !== ')') continue;
+        const close = c;
+        let d = 0, open = -1;
+        for (let q = close; q >= 0; q--){
+          const ch = src[q];
+          if (ch === ')') d++;
+          else if (ch === '('){ d--; if (d === 0){ open = q; break; } }
+        }
+        if (open === -1) continue;
+        for (const nm of CodeEditor._params(src.slice(open + 1, close))) add(nm, 'par', 'parameter', true);
+        /* ชื่อฟังก์ชันเองก็ควรอยู่ใน scope */
+        const before = src.slice(Math.max(0, open - 80), open);
+        const fm = /function\s+([A-Za-z_$][\w$]*)\s*$/.exec(before);
+        if (fm) add(fm[1], 'fn', 'function', true);
+        /* ฟังก์ชันแบบ arrow: const f = (a, b) => */
+        const am = /([A-Za-z_$][\w$]*)\s*=\s*$/.exec(before);
+        if (am) add(am[1], 'fn', 'function', true);
+      }
+
+      /* 2) ตัวแป��ที่ประกาศไว้ทั้งไฟล์ (รวม destructuring) */
+      const decl = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)/g;
+      let m;
+      while ((m = decl.exec(src))) add(m[1], 'var', 'ตัวแปร', false);
+      const destr = /\b(?:const|let|var)\s*\{([^}]*)\}\s*=/g;
+      while ((m = destr.exec(src))){
+        for (const nm of CodeEditor._params(m[1])) add(nm, 'var', 'ตัวแปร', false);
+      }
+
+      /* 3) ชื่อฟังก์ชันที่ประกาศไว้ */
+      const fns = /\bfunction\s+([A-Za-z_$][\w$]*)/g;
+      while ((m = fns.exec(src))) add(m[1], 'fn', 'function', false);
+      const fns2 = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:function\b|\([^)]*\)\s*=>)/g;
+      while ((m = fns2.exec(src))) add(m[1], 'fn', 'function', false);
+
+      /* 4) ตัวแปรที่ debug เปิดอยู่ (มีค่าจริงให้ดู) */
+      for (const x of this.vars) add(x.name, 'val', x.type, true);
+
+      return items;
+    }
+
+    /* ชุดวิธีที่ควรแนะนำหลังจุด เช่น nums. -> push/pop/... */
+    _memberItems(prefix){
+      const owner = prefix.replace(/\.$/, '');
+      const out = [];
+      const seen = new Set();
+      const push = (arr, kind) => {
+        for (const m of arr) if (!seen.has(m)){ seen.add(m); out.push({ label: m, kind: kind, detail: '', hot: false }); }
+      };
+      if (/^(console|JSON|Math|Number|parseInt|parseFloat|isNaN|isFinite|require)$/.test(owner)) return out;
+      const k = OWNER_KIND[owner];
+      if (k) push(METHODS[k], 'meth');
+      else {
+        /* เดาจากชื่อที่ประกาศไว้ว่าเป็น Array/String/Map/Set หรือเปล่า */
+        const v = this.ta.value;
+        const re = new RegExp('(?:const|let|var)\\s+' + owner + '\\s*=\\s*\\[', 'g');
+        if (re.test(v)) push(METHODS['Array'], 'meth');
+        const rs = new RegExp('(?:const|let|var)\\s+' + owner + "\\s*=\\s*(?:new Map|'|\\\")", 'g');
+        if (rs.test(v)) push(METHODS['Map'], 'meth');
+        const rset = new RegExp('(?:const|let|var)\\s+' + owner + '\\s*=\\s*new Set', 'g');
+        if (rset.test(v)) push(METHODS['Set'], 'meth');
+        const rr = new RegExp('(?:const|let|var)\\s+' + owner + "\\s*=\\s*'", 'g');
+        if (rr.test(v)) push(METHODS['String'], 'meth');
+      }
+      return out;
+    }
+
     _maybeAutocomplete(){
       const { word, start } = this._wordBefore();
-      if (word.length === 0 || /[.]$/.test(word)) { if (!/[.]$/.test(word)) this.closeAC(); return; }
-      const q = word.toLowerCase();
-      let items = [];
+      const caret = this.ta.selectionStart;
+      /* ดูว่าคำที่พิมพ์อยู่หลังจุดหรือไม่
+         ต้องใช้ lastIndexOf ไม่ใช่ endsWith เพราะตอนพิมพ์ "nums.pu" คำคือทั้ง "nums.pu" */
+      const lastDot = word.lastIndexOf('.');
+      const afterDot = lastDot >= 0;
+      const q = (afterDot ? word.slice(lastDot + 1) : word).toLowerCase();
+      if (!afterDot && !q){ this.closeAC(); return; }
+      if (q.length > 24){ this.closeAC(); return; }
 
-      for (const v of this.vars) if (v.name.toLowerCase().startsWith(q)) items.push({ label: v.name, kind: 'var', detail: v.type });
+      let items = [];
+      /* พิมพ์หลังจุด -> แนะนำวิธีของสิ่งที่ข้างหน้า และแทนเฉพาะส่วนหลังจุด
+         พิมพ์เพียงจุดเปล่า ๆ เช่น "nums." ให้แสดงวิธีทั้งหมดเลย */
+      if (afterDot){
+        const prefix = word.slice(0, lastDot + 1);
+        for (const it of this._memberItems(prefix)){
+          if (it.label.toLowerCase().startsWith(q)) items.push(it);
+        }
+        if (!items.length){ this.closeAC(); return; }
+        items.sort((a, b) => a.label.length - b.label.length);
+        this.acItems = items.slice(0, 12);
+        this.acIndex = 0;
+        this._acStart = start + prefix.length;
+        this._acWord = word.slice(prefix.length);
+        this._paintAC();
+        return;
+      }
+
+      for (const it of this._scopeItems(caret)) if (it.label.toLowerCase().startsWith(q)) items.push(it);
 
       const snipLabels = new Set(Object.keys(SNIPPETS));
       for (const k of KEYWORDS) if (k.toLowerCase().startsWith(q) && !snipLabels.has(k)) items.push({ label: k, kind: 'kw' });
       for (const s of Object.keys(SNIPPETS)) if (s.startsWith(q)) items.push({ label: s, kind: 'snip', snippet: SNIPPETS[s] });
       for (const b of BUILTINS) if (b.toLowerCase().startsWith(q)) items.push({ label: b, kind: 'fn' });
 
-      if (!items.length) { this.closeAC(); return; }
+      if (!items.length){ this.closeAC(); return; }
       const seen = new Set();
       const uniq = items.filter(it => { const k = it.label + '|' + it.kind; if (seen.has(k)) return false; seen.add(k); return true; });
-      uniq.sort((a, b) => rank(a) - rank(b));
+      uniq.sort((a, b) => rank(a) - rank(b) || a.label.length - b.label.length);
       items = uniq;
       this.acItems = items.slice(0, 12);
       this.acIndex = 0;
@@ -673,7 +1004,16 @@
     return { text: out, zero: zero };
   }
 
-  function rank(i){ return (i.hot ? -1 : 0) + (i.kind === 'var' ? 0 : i.kind === 'snip' ? 1 : i.kind === 'kw' ? 2 : 3); }
+  function rank(i){
+    if (i.kind === 'val') return 0;
+    if (i.kind === 'par') return 1;
+    if (i.kind === 'var') return 2;
+    if (i.kind === 'fn') return 3;
+    if (i.kind === 'snip') return 4;
+    if (i.kind === 'meth') return 4;
+    if (i.kind === 'kw') return 5;
+    return 6;
+  }
 
   root.CodeEditor = Editor;
   root.EditorHighlight = highlight;
