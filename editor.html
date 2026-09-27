@@ -262,6 +262,72 @@
        color:var(--fg);overflow-x:auto;white-space:pre;max-height:330px;overflow-y:auto}
   .sol-copy{position:absolute;top:6px;right:6px}
   .sol-note{font-size:11.5px;line-height:1.6;color:var(--fg3);margin-top:6px}
+
+  /* ================= แผง "ทดลองเอง" (ใส่ input อิสระ) =================
+     หน้าตาเหมือนแผงคำใบ้ เพื่อให้รู้ว่าเป็นส่วนเสริมของหน้าเดียวกัน
+     สองแผงนี้เปิดพร้อมกันไม่ได้ (ทำให้จอแคบและสับสนว่ากำลังดูอะไร) */
+  .labpanel{position:fixed;top:var(--navH);right:0;bottom:0;width:min(520px,94vw);
+       z-index:41;background:var(--bg2);border-left:1px solid var(--line);
+       box-shadow:-14px 0 44px rgba(0,0,0,.55);
+       display:flex;flex-direction:column}
+  .labpanel[hidden],.labbg[hidden]{display:none}
+  .labhead{display:flex;align-items:center;gap:10px;padding:11px 12px;
+       border-bottom:1px solid var(--line);flex:none}
+  .labhead .btn{margin-left:auto}
+
+  .labsec{padding:11px 14px;border-bottom:1px solid var(--line);flex:none}
+  .labsec.grow{flex:1;min-height:0;display:flex;flex-direction:column}
+  .lablbl{font-size:11.5px;font-weight:700;color:var(--fg3);margin-bottom:5px;
+       display:flex;align-items:center;gap:7px}
+  .lablbl .cnt{margin-left:auto;font-weight:400}
+  .labnote{font-size:12px;line-height:1.65;color:var(--fg2);background:var(--bg);
+       border:1px solid var(--line);border-left:2px solid var(--acc2);
+       border-radius:0 7px 7px 0;padding:8px 10px;margin-bottom:10px}
+  .labnote b{color:var(--fg)}
+
+  /* ปุ่มยกมาจากเคสของโจทย์ — จุดเริ่มต้นที่ดีที่สุดในการทดลอง */
+  .labquick{display:flex;flex-wrap:wrap;gap:6px}
+  .labquick .btn.sm{padding:0 9px}
+  .labquick .btn.sm.on{border-color:var(--acc2);color:var(--acc2)}
+
+  .labta{width:100%;min-height:96px;resize:vertical;padding:9px 11px;
+       background:var(--bg);color:var(--fg);border:1px solid var(--line2);
+       border-radius:8px;font:12.5px/1.6 var(--mono,ui-monospace,Consolas,monospace)}
+  .labta:focus{outline:none;border-color:var(--acc)}
+  .labta.bad{border-color:var(--err)}
+
+  .labacts{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-top:9px}
+  .labacts .hint{flex:none}
+  .labmeta{font-size:11.5px;color:var(--fg3);font-variant-numeric:tabular-nums}
+  .labmeta b{color:var(--fg2);font-weight:600}
+
+  .labwarn{font-size:12px;line-height:1.6;color:var(--warn);margin-top:8px;
+       display:none;padding:7px 9px;border-radius:7px;
+       background:color-mix(in srgb,var(--warn) 12%,transparent);
+       border:1px solid color-mix(in srgb,var(--warn) 34%,transparent)}
+  .labwarn.on{display:block}
+
+  .labout{flex:1;min-height:96px;overflow:auto;margin-top:9px;padding:9px 11px;
+       background:var(--bg);border:1px solid var(--line);border-radius:8px;
+       font:12.5px/1.62 var(--mono,ui-monospace,Consolas,monospace);color:var(--fg)}
+  .labout .o-err{color:var(--err)}
+  .labout .o-dim{color:var(--fg3)}
+  .labout .o-sep{color:var(--fg3);margin:7px 0 5px;padding-top:6px;
+       border-top:1px solid var(--line);display:block}
+
+  /* รายการชุดทดลองที่เก็บไว้ */
+  .labsave{max-height:150px;overflow:auto;margin-top:8px;
+       border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+  .labsave:empty{display:none}
+  .labitem{display:flex;align-items:center;gap:7px;padding:6px 8px;
+       border-bottom:1px solid var(--line)}
+  .labitem:last-child{border-bottom:0}
+  .labitem .nm{flex:1;min-width:0;font-size:12.5px;overflow:hidden;
+       text-overflow:ellipsis;white-space:nowrap}
+  .labitem .mini{flex:none;display:flex;gap:4px;align-items:center}
+  .labitem .btn.sm{height:24px;padding:0 8px;font-size:11px}
+  .labitem .st{font-size:10.5px;color:var(--fg3);flex:none}
+  .labitem .st.ok{color:var(--ok)}
 </style>
 </head>
 <body>
@@ -378,6 +444,10 @@
             Run Sample
             <span class="grow"></span>
             <span class="tag" id="runTag"></span>
+            <button class="btn sm" id="btnLab" title="ใส่ input เองแล้วทดลองได้อิสระ ไม่กระทบคะแนน (Ctrl+Shift+L)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2v6L3.5 17A3 3 0 0 0 6 21.5h12a3 3 0 0 0 2.5-4.5L15 8V2"/><path d="M8 2h8"/><path d="M7 14h10"/></svg>
+              ทดลองเอง
+            </button>
             <button class="btn sm" id="btnClearRaw" title="ล้างหน้าจอ">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
             </button>
@@ -463,9 +533,63 @@
   </div>
 </aside>
 
-<script src="problems/problems.js?v=58"></script>
-<script src="js/interpreter.js?v=58"></script>
-<script src="js/editor.js?v=58"></script>
-<script src="js/app.js?v=58"></script>
+<!-- ================= แผง "ทดลองเอง" =================
+     ใส่ input ได้อิสระ ไม่ผูกกับ test case ของโจทย์
+     ไม่แตะคะแนน ไม่นับจำนวนครั้งที่ส่ง และไม่กระทบสถานะผ่าน/ไม่ผ่าน -->
+<div class="labbg" id="labBg" hidden></div>
+<aside class="labpanel" id="labPanel" hidden aria-label="ทดลองด้วย input ที่ใส่เอง">
+  <div class="labhead">
+    <div class="htitle">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2v6L3.5 17A3 3 0 0 0 6 21.5h12a3 3 0 0 0 2.5-4.5L15 8V2"/><path d="M8 2h8"/><path d="M7 14h10"/></svg>
+      <b>ทดลองเอง</b>
+    </div>
+    <button class="btn icon" id="labClose" title="ปิด (Esc)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+
+  <div class="labsec">
+    <div class="labnote">
+      พิมพ์ <b>input</b> ที่อยากลองได้เลย แล้วกด <b>รัน</b>
+      โค้ดของโจทย์จะได้รับข้อความนี้เป็น stdin ตรง ๆ เหมือนตอนส่งงานจริง
+      <br>ส่วนนี้เป็นการทดลองเท่านั้น <b>ไม่กระทบคะแนน ไม่นับจำนวนครั้งที่ส่ง</b> และทำได้เท่าที่ต้องการ
+    </div>
+    <div class="lablbl">ยกมาจากข้อมูลของโจทย์ แล้วแก้เฉพาะที่ต้องการ</div>
+    <div class="labquick" id="labQuick"></div>
+  </div>
+
+  <div class="labsec grow">
+    <div class="lablbl">
+      input ที่จะลอง
+      <span class="cnt" id="labShape"></span>
+    </div>
+    <textarea class="labta" id="labIn" spellcheck="false" autocomplete="off"
+      placeholder='พิมพ์ JSON เช่น [1,2,4] หรือ {"A":1,"B":9}'></textarea>
+    <div class="labacts">
+      <button class="btn sm go" id="labRun">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 3.5v17l15-8.5z"/></svg>รัน
+      </button>
+      <button class="btn sm" id="labFormat" title="จัดรูปให้อ่านง่าย (Ctrl+Shift+L ที่ช่องนี้จะรันแทน)">จัดรูป</button>
+      <button class="btn sm" id="labSave" title="เก็บ input นี้ไว้ในรายการด้านล่าง">เก็บลงรายการ</button>
+      <button class="btn sm" id="labCopy" title="คัดลอก input">คัดลอก</button>
+      <span class="labmeta" id="labMeta"></span>
+    </div>
+    <div class="labwarn" id="labWarn"></div>
+    <div class="labout" id="labOut"><span class="o-dim">ยังไม่ได้รัน</span></div>
+  </div>
+
+  <div class="labsec">
+    <div class="lablbl">
+      ชุดทดลองของฉัน
+      <span class="cnt" id="labSavedN"></span>
+    </div>
+    <div class="labsave" id="labSaved"></div>
+  </div>
+</aside>
+
+<script src="problems/problems.js?v=61"></script>
+<script src="js/interpreter.js?v=61"></script>
+<script src="js/editor.js?v=61"></script>
+<script src="js/app.js?v=61"></script>
 </body>
 </html>

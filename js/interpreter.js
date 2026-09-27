@@ -884,10 +884,8 @@
             if (el === null){ arr.length++; continue; }
             if (el.type === 'Spread'){
               const v = yield* evalExpr(el.arg, env);
-              if (Array.isArray(v)) arr.push(...v);
-              else if (typeof v === 'string') arr.push(...v);
-              else if (v && typeof v[Symbol.iterator] === 'function') arr.push(...v);
-              else arr.push(v);
+              const items = iterate(v, node.line);
+              for (const it of items) arr.push(it);
               continue;
             }
             arr.push(yield* evalExpr(el, env));
@@ -1059,9 +1057,8 @@
       for (const a of nodes){
         if (a.type === 'Spread'){
           const v = yield* evalExpr(a.arg, env);
-          if (Array.isArray(v)) args.push(...v);
-          else if (typeof v === 'string') args.push(...v);
-          else if (v && typeof v[Symbol.iterator] === 'function') args.push(...v);
+          const items = iterate(v, a.line);
+          for (const it of items) args.push(it);
           continue;
         }
         args.push(yield* evalExpr(a, env));
@@ -1384,7 +1381,12 @@
     function* bindPattern(pat, value, env, line) {
       if (pat.type === 'Ident'){ declare(env, pat.name, value); return; }
       if (pat.type === 'ArrayPattern'){
-        const arr = Array.isArray(value) ? value : (value == null ? [] : iterate(value, line));
+        /* null / undefined ต้อง error เหมือน JS จริง
+           ถ้าให้ผ่านเงียบ ๆ นักเรียนจะได้ a = undefined โดยไม่รู้ว่า input ผิดรูป */
+        if (value === null || value === undefined) {
+          throw RuntimeError('TypeError', String(value) + ' is not iterable', line);
+        }
+        const arr = Array.isArray(value) ? value : iterate(value, line);
         const used = new Set();
         for (let i = 0; i < pat.elems.length; i++){
           const el = pat.elems[i];
@@ -1397,7 +1399,11 @@
         return;
       }
       if (pat.type === 'ObjectPattern'){
-        const src = (value !== null && value !== undefined && typeof value === 'object') ? value : {};
+        /* ใน JS จริง null/undefined พัง แต่ตัวเลข/สตริงถูกแปลงเป็น {} ได้ */
+        if (value === null || value === undefined) {
+          throw RuntimeError('TypeError', "Cannot destructure '" + String(value) + "' as it is " + String(value) + '.', line);
+        }
+        const src = (typeof value === 'object') ? value : {};
         const usedKeys = [];
         for (const pr of pat.props){
           if (pr.rest){
@@ -1418,13 +1424,16 @@
       throw RuntimeError('SyntaxError', 'Invalid binding pattern', line);
     }
 
+    /* คลายค่าให้เป็นรายการ ใช้กับทั้ง for...of, spread และ destructure
+       ต้อง error เมื่อค่าไม่ iterable เหมือน JavaScript จริง
+       (object ธรรมดาไม่นับ — ถ้าปล่อยให้วิ่งต่อ นักเรียนจะได้คำตอบที่ดูเหมือนถูก
+        โดยไม่รู้ว่า input ผิดรูป ซึ่งสำคัญมากตอนให้ใส่ input เองทดลอง) */
     function iterate(v, line) {
       if (Array.isArray(v)) return v;
       if (typeof v === 'string') return v.split('');
       if (v instanceof Set) return [...v];
       if (v instanceof Map) return [...v.entries()];
       if (v && typeof v[Symbol.iterator] === 'function') return [...v];
-      if (v && typeof v === 'object') return Object.values(v);
       throw RuntimeError('TypeError', String(v) + ' is not iterable', line);
     }
 
@@ -1610,11 +1619,15 @@
       if (node.params){
         for (let i = 0; i < node.params.length; i++){
           const p = node.params[i];
-          /* arrow แบบ x => ... เก็บ param เป็น Ident ตรง ๆ ไม่ใช่ Param */
+          /* arrow แบบ x => ... เก็บ param เป็น Ident ตรง ๆ ไม่ใช่ Param
+             ส่วน Rest จะมีทั้ง p.type และ p.target เป็น 'Rest'
+             ต้องเช็คทั้งสองที่ ไม่งั้น ...xs จะได้แค่ค่าเดียวแทนทั้งอาร์เรย์ */
           const pTarget = (p && p.target) ? p.target : p;
           const pDef = p ? p.def : null;
-          if (pTarget && pTarget.type === 'Rest'){
-            yield* bindPattern(pTarget.target, args.slice(i), fEnv, line);
+          const isRest = (p && p.type === 'Rest') || (pTarget && pTarget.type === 'Rest');
+          if (isRest){
+            const restTarget = (pTarget && pTarget.type === 'Rest') ? pTarget.target : pTarget;
+            yield* bindPattern(restTarget, args.slice(i), fEnv, line);
             break;
           }
           let v = args[i];

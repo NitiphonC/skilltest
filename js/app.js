@@ -176,7 +176,7 @@
      บันทึกไว้ว่าเปิดถึงระดับไหนและดูเฉลยแบบไหนไปแล้ว
      เพื่อให้ครูเห็นว่าโจทย์ไหนนักเรียนต้องพึ่งคำใบ้ถึงระดับสุดท้าย */
   const HINT_KEY = 'cp_hints_v1';
-  const HINT_SRC = 'problems/solutions.js?v=58';
+  const HINT_SRC = 'problems/solutions.js?v=61';
   let hintData = null;      // window.HINTS
   let hintLoad = null;      // Promise กำลังโหลด
   let hintOpenLv = [];      // ระดับที่เปิดค้างไว้ในรอบนี้
@@ -322,6 +322,7 @@
   }
 
   function openHint() {
+    if (labIsOpen()) closeLab();
     const panel = $('hintPanel');
     const bg = $('hintBg');
     panel.hidden = false;
@@ -408,6 +409,314 @@
       if (e.key.toLowerCase() === 'h') {
         e.preventDefault();
         hintIsOpen() ? closeHint() : openHint();
+      }
+    });
+  }
+
+  /* ---------------- แผง "ทดลองเอง" — ใส่ input อิสระ ----------------
+     หลักการ
+       - input ที่พิมพ์ถูกส่งเป็น stdin ตรง ๆ เหมือนตอนส่งงานจริง ไม่ผ่าน JSON.stringify ซ้ำ
+         เพราะนักเรียนต้องการเขียน JSON เอง และต้องการเห็นว่า JSON เสียจะเกิดอะไรขึ้น
+       - ไม่แตะ cp_progress_v1 ไม่นับจำนวนครั้งที่ส่ง ไม่กระทบผล Submit
+       - เก็บ input ที่ชอบไว้เป็นรายการ เพื่อทดลองหลายชุดแล้วเทียบกันได้
+       - เตือนเมื่อ JSON อ่านไม่ได้ แต่ยังให้รันได้ เพราะบางครั้งนักเรียนอยากเห็น error จริง
+     เก็บคีย์ cp_lab_v1 แยกจากงาน เพื่อให้ลบทิ้งได้โดยไม่กระทบงานที่เขียนไว้ */
+  const LAB_KEY = 'cp_lab_v1';
+  let labDirty = false;        // ผู้ใช้แก้ input เองแล้ว ห้ามเขียนทับด้วยการกดปุ่มยกมา
+
+  function readLab(){
+    try {
+      const o = JSON.parse(localStorage.getItem(LAB_KEY));
+      return (o && typeof o === 'object') ? o : {};
+    } catch (e) { return {}; }
+  }
+  function labState(){
+    const a = readLab();
+    const s = a[P.id];
+    return (s && typeof s === 'object') ? s : { saved: [] };
+  }
+  function saveLabState(patch){
+    const a = readLab();
+    const s = labState();
+    if (patch.saved) s.saved = patch.saved;
+    if (patch.input !== undefined) s.input = patch.input;
+    a[P.id] = s;
+    try { localStorage.setItem(LAB_KEY, JSON.stringify(a)); } catch (e) { /* โหมดส่วนตัว */ }
+  }
+
+  /* อธิบายรูปร่างของ input ที่พิมพ์ เพื่อให้นักเรียนเห็นว่า "ที่โค้ดคาดหวัง" ตรงกันไหม
+     นี่คือข้อมูลที่ช่วยได้มากที่สุดตอนคำตอบไม่ตรง เพราะส่วนใหญ่เกิดจาก "ใส่ input ผิดรูป" */
+  function describeShape(text) {
+    const t = String(text == null ? '' : text).trim();
+    if (!t) return '';
+    let v;
+    try { v = JSON.parse(t); }
+    catch (e) { return 'อ่านเป็น JSON ไม่ได้'; }
+    const kind = Array.isArray(v) ? 'Array' : v === null ? 'null' : typeof v;
+    if (Array.isArray(v)) {
+      const first = v.length ? JSON.stringify(v[0]) : '';
+      return 'Array ยาว ' + v.length + (first ? ' · สมาชิกแรกเป็น ' + kindOf(first) : ' · ว่างเปล่า');
+    }
+    if (v !== null && typeof v === 'object') {
+      const keys = Object.keys(v);
+      return 'Object · มี ' + keys.length + ' คีย์: ' + keys.join(', ');
+    }
+    return kind;
+  }
+  function kindOf(json) {
+    try {
+      const v = JSON.parse(json);
+      if (Array.isArray(v)) return 'Array';
+      if (v === null) return 'null';
+      return typeof v;
+    } catch (e) { return '?'; }
+  }
+
+  function labJsonError(text) {
+    const t = String(text == null ? '' : text).trim();
+    if (!t) return 'ยังไม่ได้พิมพ์ input — โค้ดจะได้ค่าว่างไป JSON.parse แล้ว error';
+    try { JSON.parse(t); return null; }
+    catch (e) { return String(e && e.message ? e.message : e); }
+  }
+
+  function renderLabQuick() {
+    const box = $('labQuick');
+    const items = [];
+    const ex = (P.examples && P.examples[0]) ? String(P.examples[0].input) : null;
+    if (ex) items.push({ label: 'ตัวอย่างโจทย์', text: ex });
+    P.testCases.forEach((tc, i) => {
+      items.push({ label: '#' + (i + 1), text: JSON.stringify(tc.input) });
+    });
+    box.innerHTML = items.map((it, i) =>
+      '<button class="btn sm" type="button" data-q="' + i + '">' + esc(it.label) + '</button>'
+    ).join('');
+    box._items = items;
+  }
+
+  function labSetInput(text, fromUser) {
+    $('labIn').value = text;
+    if (!fromUser) labDirty = false;
+    checkLabInput();
+  }
+
+  function checkLabInput() {
+    const text = $('labIn').value;
+    const err = labJsonError(text);
+    const warn = $('labWarn');
+    const ta = $('labIn');
+    warn.classList.remove('on');
+    ta.classList.remove('bad');
+    if (err) {
+      warn.textContent = (text.trim()
+        ? 'JSON นี้อ่านไม่ได้: ' + err
+        : err) + ' — โค้ดของโจทย์เรียก JSON.parse ตรง ๆ ถ้าปล่อยไว้จะเห็น error ตอนกดรัน';
+      warn.classList.add('on');
+      ta.classList.add('bad');
+    }
+    $('labShape').textContent = describeShape(text);
+  }
+
+  function labRun() {
+    const text = $('labIn').value;
+    $('labMeta').textContent = 'กำลังรัน…';
+    $('labOut').innerHTML = '<span class="o-dim">กำลังรัน…</span>';
+    const t0 = (window.performance && performance.now) ? performance.now() : Date.now();
+    /* หน่วงหนึ่งจังหวะก่อน เพื่อให้ข้อความ "กำลังรัน" อัปเดตทันที
+       (ถ้าไม่หน่า การรันที่เสร็จเร็วมากจะไม่เห็นสถานะระหว่างทำงาน) */
+    setTimeout(() => {
+      const dt = ((window.performance && performance.now) ? performance.now() : Date.now()) - t0;
+      let lines = [], err = null;
+      try {
+        const ast = Interp.parse(ed.getValue());
+        const r = Interp.createRunner(ast, { input: text, maxSteps: 3000000 });
+        let ev, guard = 0;
+        for (;;) {
+          ev = r.next();
+          if (!ev || ev.type === 'done') break;
+          if (++guard > 3000000) break;
+        }
+        if (ev && ev.type !== 'done') err = ev.err || null;
+        else lines = r.ctx.out || [];
+      } catch (e) {
+        err = e;
+      }
+      const ms = Math.round(dt);
+      $('labMeta').innerHTML = lines.length || err
+        ? 'ใช้เวลา ' + ms + ' ms'
+        : 'ใช้เวลา ' + ms + ' ms · ไม่มี console.log เลย';
+
+      let h = '';
+      if (lines.length) {
+        for (const l of lines) h += esc(String(l)) + '\n';
+      } else {
+        h += '<span class="o-dim">' + (err ? '' : '(ไม่มี console.log — ลืมพิมพ์คำตอบหรือยัง?)') + '</span>';
+      }
+      if (err) {
+        if (h) h += '<span class="o-sep">แล้วก็ error</span>';
+        h += '<span class="o-err">' + esc((err.name || 'Error') + ': ' + (err.message || ''))
+          + (err.line ? '  (บรรทัด ' + err.line + ')' : '') + '</span>';
+      }
+      $('labOut').innerHTML = h.replace(/\n$/, '');
+      $('labOut').scrollTop = 0;
+      markLabSaved(text, err ? 'error' : 'ok');
+    }, 20);
+  }
+
+  function markLabSaved(text, state) {
+    const st = labState();
+    const item = (st.saved || []).find(x => x.input === text);
+    if (!item) return;
+    item.state = state;
+    saveLabState({ saved: st.saved });
+    renderLabSaved();
+  }
+
+  function renderLabSaved() {
+    const st = labState();
+    const list = Array.isArray(st.saved) ? st.saved : [];
+    $('labSavedN').textContent = list.length ? list.length + ' ชุด' : '';
+    $('labSaved').innerHTML = list.map((it, i) =>
+      '<div class="labitem" data-i="' + i + '">'
+      + '<span class="nm" title="' + esc(it.input) + '">' + esc(it.name) + '</span>'
+      + (it.state === 'ok' ? '<span class="st ok">รันแล้ว</span>'
+        : it.state === 'error' ? '<span class="st">error</span>' : '')
+      + '<span class="mini">'
+      + '<button class="btn sm" data-a="run" data-i="' + i + '">รัน</button>'
+      + '<button class="btn sm" data-a="load" data-i="' + i + '" title="เอามาแก้ต่อ">แก้</button>'
+      + '<button class="btn sm" data-a="del" data-i="' + i + '" title="ลบชุดนี้">ลบ</button>'
+      + '</span></div>'
+    ).join('');
+  }
+
+  function labAdd() {
+    const text = $('labIn').value.trim();
+    if (!text) { alert('ยังไม่ได้พิมพ์ input'); return; }
+    const st = labState();
+    const list = Array.isArray(st.saved) ? st.saved.slice() : [];
+    if (list.some(x => x.input === text)) { alert('เก็บ input นี้ไว้แล้ว'); return; }
+    const name = window.prompt('ตั้งชื่อชุดนี้ว่าอะไรดี', 'ชุดที่ ' + (list.length + 1));
+    if (name === null) return;
+    list.push({ name: (name || ('ชุดที่ ' + (list.length + 1))).slice(0, 40), input: text, state: '' });
+    saveLabState({ saved: list });
+    renderLabSaved();
+  }
+
+  function labFormat() {
+    const text = $('labIn').value.trim();
+    if (!text) return;
+    try {
+      $('labIn').value = JSON.stringify(JSON.parse(text), null, 2);
+      labDirty = true;
+      checkLabInput();
+    } catch (e) {
+      alert('จัดรูปไม่ได้ เพราะ JSON นี้อ่านไม่ผ่าน:\n' + (e && e.message ? e.message : e));
+    }
+  }
+
+  function labLoadQuick(i) {
+    const items = $('labQuick')._items;
+    if (!items || !items[i]) return;
+    labSetInput(items[i].text, false);
+    $('labIn').value = items[i].text;
+    labDirty = true;
+    saveLabState({ input: items[i].text });
+    /* ทำเครื่องหมายว่าปุ่มไหนถูกกดล่าสุด */
+    Array.from($('labQuick').children).forEach((b, j) => b.classList.toggle('on', j === i));
+  }
+
+  function openLab() {
+    if (hintIsOpen()) closeHint();
+    const st = labState();
+    renderLabQuick();
+    renderLabSaved();
+    labSetInput(st.input !== undefined ? st.input : JSON.stringify(P.testCases[0].input), false);
+    $('labPanel').hidden = false;
+    $('labBg').hidden = false;
+    $('btnLab').classList.add('on');
+    $('labOut').innerHTML = '<span class="o-dim">พิมพ์ input แล้วกดรัน — ลองแก้จากข้อมูลของโจทย์ก็ได้</span>';
+    $('labMeta').textContent = '';
+  }
+
+  function closeLab() {
+    $('labPanel').hidden = true;
+    $('labBg').hidden = true;
+    $('btnLab').classList.remove('on');
+  }
+  function labIsOpen() { return !$('labPanel').hidden; }
+
+  function wireLab() {
+    $('btnLab').addEventListener('click', () => (labIsOpen() ? closeLab() : openLab()));
+    $('labClose').addEventListener('click', closeLab);
+    $('labBg').addEventListener('click', closeLab);
+    $('labRun').addEventListener('click', labRun);
+    $('labSave').addEventListener('click', labAdd);
+    $('labFormat').addEventListener('click', labFormat);
+    $('labCopy').addEventListener('click', () => {
+      const text = $('labIn').value;
+      const done = () => {
+        const b = $('labCopy');
+        const old = b.textContent;
+        b.textContent = 'คัดลอกแล้ว';
+        setTimeout(() => { b.textContent = old; }, 1400);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, () => window.prompt('คัดลอก input', text));
+      } else {
+        window.prompt('คัดลอก input', text);
+      }
+    });
+
+    /* พิมพ์ input -> เตือนเรื่องรูปร่าง และจำไว้ (หน่วง 400ms เหมือนการบันทึกงาน) */
+    let labTimer = null;
+    $('labIn').addEventListener('input', () => {
+      checkLabInput();
+      labDirty = true;
+      if (labTimer) clearTimeout(labTimer);
+      labTimer = setTimeout(() => { labTimer = null; saveLabState({ input: $('labIn').value }); }, 400);
+    });
+    /* Ctrl+Enter ในช่อง input = รัน */
+    $('labIn').addEventListener('keydown', e => {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); labRun(); }
+    });
+
+    /* ปุ่มยกมาจากเคสของโจทย์ */
+    $('labQuick').addEventListener('click', e => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      labLoadQuick(Number(b.getAttribute('data-q')));
+    });
+
+    /* รายการชุดทดลอง: รัน / แก้ / ลบ */
+    $('labSaved').addEventListener('click', e => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      const i = Number(b.getAttribute('data-i'));
+      const st = labState();
+      const list = Array.isArray(st.saved) ? st.saved : [];
+      if (!list[i]) return;
+      const act = b.getAttribute('data-a');
+      if (act === 'run') {
+        labSetInput(list[i].input, true);
+        saveLabState({ input: list[i].input });
+        labRun();
+      } else if (act === 'load') {
+        labSetInput(list[i].input, true);
+        saveLabState({ input: list[i].input });
+        $('labIn').focus();
+      } else if (act === 'del') {
+        if (!confirm('ลบชุด "' + list[i].name + '" ออก?')) return;
+        list.splice(i, 1);
+        saveLabState({ saved: list });
+        renderLabSaved();
+      }
+    });
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && labIsOpen()) { closeLab(); return; }
+      if (!(e.ctrlKey || e.metaKey)) return;
+      if (e.key.toLowerCase() === 'l' && e.shiftKey) {
+        e.preventDefault();
+        labIsOpen() ? closeLab() : openLab();
       }
     });
   }
@@ -1020,6 +1329,7 @@
     $('btnImport').addEventListener('click', importDrafts);
     $('fileImport').addEventListener('change', e => handleImportFile(e.target.files && e.target.files[0]));
     wireHints();
+    wireLab();
     paintHintBtn();
     /* ปุ่ม sidebar: จอกว้างยุบ/ขยายในแถบ, จอแคบเป็น panel เลื่อนเข้ามา */
     const sideEl = $('side');
